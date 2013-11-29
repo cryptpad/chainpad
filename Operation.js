@@ -1,3 +1,18 @@
+/* vim: set expandtab ts=4 sw=4: */
+/*
+ * You may redistribute this program and/or modify it under the terms of
+ * the GNU Lesser General Public License as published by the Free Software
+ * Foundation, either version 2.1 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 var Common = require('./Common');
 
 var Operation = {};
@@ -9,20 +24,17 @@ var create = Operation.create = function () {
         toInsert: '',
     };
 };
-var check = Operation.check = function (op) {
-    if (!Common.PARANOIA) { return; }
-    if (op.type !== 'Operation' ||
-        !Common.isUint(op.offset) ||
-        !Common.isUint(op.toDelete) ||
-        typeof(op.toInsert) !== 'string' ||
-        (op.toDelete === 0 && op.toInsert.length === 0))
-    {
-        throw new Error(JSON.stringify(op, null, '  ') + ' is not a valid operation');
-    }
+var check = Operation.check = function (op, docLength_opt) {
+    Common.assert(op.type === 'Operation');
+    Common.assert(Common.isUint(op.offset));
+    Common.assert(Common.isUint(op.toDelete));
+    Common.assert(typeof(op.toInsert) === 'string');
+    Common.assert(op.toDelete > 0 || op.toInsert.length > 0);
+    Common.assert(typeof(docLength_opt) !== 'number' || op.length + op.toDelete <= docLength_opt);
 };
 
 var toObj = Operation.toObj = function (op) {
-    check(op);
+    if (Common.PARANOIA) { check(op); }
     return [op.offset,op.toDelete,op.toInsert];
 };
 
@@ -32,12 +44,12 @@ var fromObj = Operation.fromObj = function (obj) {
     op.offset = obj[0];
     op.toDelete = obj[1];
     op.toInsert = obj[2];
-    check(op);
+    if (Common.PARANOIA) { check(op); }
     return op;
 };
 
 var clone = Operation.clone = function (op) {
-    check(op);
+    if (Common.PARANOIA) { check(op); }
     var out = create();
     out.offset = op.offset;
     out.toDelete = op.toDelete;
@@ -48,105 +60,66 @@ var clone = Operation.clone = function (op) {
 /**
  * @param op the operation to apply.
  * @param doc the content to apply the operation on 
- * @return an array containing the modified document and the reverse operation.
  */
 var apply = Operation.apply = function (op, doc)
 {
-    check(op);
-    Common.assert(typeof(doc) === 'string');
-    Common.assert(op.offset + op.toDelete <= doc.length);
+    if (Common.PARANOIA) {
+        check(op);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(op.offset + op.toDelete <= doc.length);
+    }
+    return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toDelete);
+};
+
+var invert = Operation.invert = function (op, doc) {
+    if (Common.PARANOIA) {
+        check(op);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(op.offset + op.toDelete <= doc.length);
+    }
     var rop = clone(op);
     rop.toInsert = doc.substring(op.offset, op.offset + op.toDelete);
     rop.toDelete = op.toInsert.length;
-    return {
-        doc: doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toDelete),
-        inverse: rop
-    };
+    return rop;
 };
 
 var lengthChange = Operation.lengthChange = function (op)
 {
+    if (Common.PARANOIA) { check(op); }
     return op.toInsert.length - op.toDelete;
 };
 
 /*
- *         |<------oldOpDelete------>|
- *         |<----oldOpInsert--->|
- * |<---------newOpDelete--------->|
- * |<-----newOpInsert---->|
- */
-
-
-/*
- *         |<------oldOpDelete------>|
- *         |<----oldOpInsert--->|
- * |<---newOpDelete--->|
- * |<-----newOpInsert---->|
- *
- * 1. Merge newOpDelete with oldOpInsert
- *         |<------oldOpDelete------>|
- *         |<--ooi->|
- * |<-nod->|
- * |<-----newOpInsert---->|
- *
- * 2. Expand oldOpDelete with remaining of newOpDelete
- *         |<------oldOpDelete------>|<-nod->|
- *         |<--ooi->|
- * |<-----newOpInsert---->|
- *
- * 3. Insert newOpInsert into oldOpInsert
- *         |<------oldOpDelete------>|<-nod->|
- * |<-----newOpInsert---->|<--ooi->|
- *
  * @return the merged operation OR null if the result of the merger is a noop.
- *
-var rmerge = function (oldOp, newOp) {
-    check(newOp);
-    check(oldOp);
-    Common.assert(oldOp.offset >= newOp.offset);
-    Common.assert(oldOp.offset <= (newOp.offset + newOp.toInsert.length));
-
-    newOp = clone(newOp);
-    oldOp = clone(oldOp);
-//negative
-    var offsetDiff = newOp.offset - oldOp.offset;
-
-    // 1.
-    if (newOp.toDelete > 0) {
-        if (newOp.toDelete + offsetDiff > oldOp.toInsert.length) {
-            /* newOpDelete runs over the end of oldOpInsert
-             *         |<------oldOpDelete------>|
-             *         |<----oldOpInsert--->|
-             * |<-----------newOpDelete----------->|
-             * |<-----newOpInsert---->|
-             *
-            var origOldInsert = oldOp.toInsert;
-            oldOp.toInsert = oldOp.toInsert.substring(0,offsetDiff); // ''
-            Common.assert(oldOp.toInsert.length === (offsetDiff < 0 ? offsetDiff : 0));
-
-            newOp.toDelete -= (origOldInsert.length - oldOp.toInsert.length);
-            Common.assert(newOp.toDelete > 0);
-
-            // 2.
-            oldOp.toDelete += newOp.toDelete;
-            newOp.toDelete = 0;
-        } else {
-            /* newOpDelete deletes only part of oldOpInsert
-             *         |<------oldOpDelete------>|
-             *         |<----oldOpInsert--->|
-             * |<---newOpDelete--->|
-             * |<-----newOpInsert---->|
-             *
-            oldOp.toInsert = (
-                 oldOp.toInsert.substring(0,offsetDiff)
-               + oldOp.toInsert.substring(offsetDiff + newOp.toDelete)
-            );
-            newOp.toDelete = 0;
-        }
+ */
+var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
+    if (Common.PARANOIA) {
+        check(newOpOrig);
+        check(oldOpOrig);
     }
 
-    // 3.
-    if (oldOp.toInsert.length === offsetDiff) {
+    var newOp = clone(newOpOrig);
+    var oldOp = clone(oldOpOrig);
+    var offsetDiff = newOp.offset - oldOp.offset;
+
+    if (newOp.toDelete > 0) {
+        var origOldInsert = oldOp.toInsert;
+        oldOp.toInsert = (
+             oldOp.toInsert.substring(0,offsetDiff)
+           + oldOp.toInsert.substring(offsetDiff + newOp.toDelete)
+        );
+        newOp.toDelete -= (origOldInsert.length - oldOp.toInsert.length);
+        if (newOp.toDelete < 0) { newOp.toDelete = 0; }
+
+        oldOp.toDelete += newOp.toDelete;
+        newOp.toDelete = 0;
+    }
+
+    if (offsetDiff < 0) {
+        oldOp.offset += offsetDiff;
+        oldOp.toInsert = newOp.toInsert + oldOp.toInsert;
+
+    } else if (oldOp.toInsert.length === offsetDiff) {
         oldOp.toInsert = oldOp.toInsert + newOp.toInsert;
 
     } else if (oldOp.toInsert.length > offsetDiff) {
@@ -156,102 +129,32 @@ var rmerge = function (oldOp, newOp) {
           + oldOp.toInsert.substring(offsetDiff)
         );
     } else {
-        throw new Error("should never happen");
+        throw new Error("should never happen\n" +
+                        JSON.stringify([oldOpOrig,newOpOrig], null, '  '));
     }
 
     if (oldOp.toInsert === '' && oldOp.toDelete === 0) {
         return null;
     }
-    check(oldOp);
+    if (Common.PARANOIA) { check(oldOp); }
+
     return oldOp;
 };
-*/
-/*
- * |<------oldOpDelete------>|
- * |<----oldOpInsert--->|
- *         |<---newOpDelete--->|
- *         |<-----newOpInsert---->|
- *
- * 1. Merge newOpDelete with oldOpInsert
- * |<------oldOpDelete------>|
- * |<-ooi->|
- *         |<-nod>|
- *         |<-----newOpInsert---->|
- *
- * 2. Expand oldOpDelete with remaining of newOpDelete
- * |<----------oldOpDelete--------->|
- * |<-ooi->|
- *         |<-----newOpInsert---->|
- *
- * 3. Insert newOpInsert into oldOpInsert
- * |<-------oldOpDelete------->|
- * |<-ooi->|<-----newOpInsert---->|
- *
- * @return the merged operation OR null if the result of the merger is a noop.
+
+/**
+ * If the new operation deletes what the old op inserted or inserts content in the middle of
+ * the old op's content or if they abbut one another, they should be merged.
  */
-var merge = Operation.merge = function (oldOp, newOp) {
-    check(newOp);
-    check(oldOp);
-    Common.assert(newOp.offset >= oldOp.offset);
-    Common.assert(newOp.offset <= (oldOp.offset + oldOp.toInsert.length));
-
-    newOp = clone(newOp);
-    oldOp = clone(oldOp);
-    var offsetDiff = newOp.offset - oldOp.offset;
-
-    // 1.
-    if (newOp.toDelete > 0) {
-        if (newOp.toDelete + offsetDiff > oldOp.toInsert.length) {
-            /* newOpDelete runs over the end of oldOpInsert
-             * |<------oldOpDelete------>|
-             * |<----oldOpInsert--->|
-             *         |<---newOpDelete--->|
-             *         |<-----newOpInsert---->|
-             */
-            var origOldInsert = oldOp.toInsert;
-            oldOp.toInsert = oldOp.toInsert.substring(0,offsetDiff);
-            Common.assert(oldOp.toInsert.length === offsetDiff);
-
-            newOp.toDelete -= (origOldInsert.length - oldOp.toInsert.length);
-            Common.assert(newOp.toDelete > 0);
-
-            // 2.
-            oldOp.toDelete += newOp.toDelete;
-            newOp.toDelete = 0;
-        } else {
-            /* newOpDelete deletes only part of oldOpInsert
-             * |<------oldOpDelete------>|
-             * |<------------------------oldOpInsert--------------------->|
-             *                                |<---newOpDelete--->|
-             *                                |<----------newOpInsert--------->|
-             */
-            oldOp.toInsert = (
-                 oldOp.toInsert.substring(0,offsetDiff)
-               + oldOp.toInsert.substring(offsetDiff + newOp.toDelete)
-            );
-            newOp.toDelete = 0;
-        }
+var shouldMerge = Operation.shouldMerge = function (oldOp, newOp) {
+    if (Common.PARANOIA) {
+        check(oldOp);
+        check(newOp);
     }
-
-    // 3.
-    if (oldOp.toInsert.length === offsetDiff) {
-        oldOp.toInsert = oldOp.toInsert + newOp.toInsert;
-
-    } else if (oldOp.toInsert.length > offsetDiff) {
-        oldOp.toInsert = (
-            oldOp.toInsert.substring(0,offsetDiff)
-          + newOp.toInsert
-          + oldOp.toInsert.substring(offsetDiff)
-        );
+    if (newOp.offset < oldOp.offset) {
+        return (oldOp.offset <= (newOp.offset + newOp.toDelete));
     } else {
-        throw new Error("should never happen");
+        return (newOp.offset <= (oldOp.offset + oldOp.toInsert.length));
     }
-
-    if (oldOp.toInsert === '' && oldOp.toDelete === 0) {
-        return null;
-    }
-    check(oldOp);
-    return oldOp;
 };
 
 /**
@@ -264,8 +167,11 @@ var merge = Operation.merge = function (oldOp, newOp) {
  *                null if newOp and oldOp must be merged.
  */
 var rebase = Operation.rebase = function (oldOp, newOp) {
+    if (Common.PARANOIA) {
+        check(oldOp);
+        check(newOp);
+    }
     if (newOp.offset < oldOp.offset) { return newOp; }
-    if (newOp.offset <= (oldOp.offset + oldOp.toInsert.length)) { return null; }
     newOp = clone(newOp);
     newOp.offset += oldOp.toDelete;
     newOp.offset -= oldOp.toInsert.length;
@@ -273,39 +179,40 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
 };
 
 /**
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which took place before toTransform
- * @return an array of operations which represent the transformed operation.
+ * this is a lossy and dirty algorithm, everything else is nice but transformation
+ * has to be lossy because both operations have the same base and they diverge.
+ * This could be made nicer and/or tailored to a specific data type.
+ *
+ * @param toTransform the operation which is converted, MUTATED
+ * @param transformBy an existing operation which also has the same base.
+ * @return nothing, input is mutated
  */
 var transform = Operation.transform = function (toTransform, transformBy) {
-    if (toTransform.offset <= transformBy.offset) {
-        if (toTransform.offset + toTransform.toDelete <= transformBy.offset) {
-            // they don't touch
-            return;
-        }
-
-        if (toTransform.offset + toTransform.toDelete <= transformBy.offset + transformBy.toDelete)
-        {
-            // they delete some of the same content, now toTransform deletes only everything up to
-            // the beginning of transformBy
-            toTransform.toDelete = transformBy.offset - toTransform.offset;
-            return;
-        }
-
-        // toTransform deletes more than everything that transformBy deletes.
-        // This is the case of Alice typing some content in a paragraph and Bob deleting the whole
-        // paragraph. Algorithmically it seems right that Alice's content should stay since Bob
-        // has never even had a chance to read it, let alone decide to delete it, but on the other
-        // hand, Alice's work will be left in the middle of nowhere with no context and therefor
-        // it is decided that Bob's deletion of the paragraph should take Alice's content along with
-        // it.
-        // TODO this is also the case when Alice is typing and bob is pressing delete and he
-        //      reaches the first letter typed by Alice and hits delete once, maybe a better way?
-        toTransform.toDelete += transformBy.toInsert.length;
-        return;
+    if (Common.PARANOIA) {
+        check(toTransform);
+        check(transformBy);
     }
-    // toTransform offset exceeds transformBy offset.
-    throw new Error("TODO :)");
+    if (toTransform.offset > transformBy.offset) {
+        //toTransform = clone(toTransform);
+        if (toTransform.offset > transformBy.offset + transformBy.toDelete) {
+            // simple rebase
+            toTransform.offset -= transformBy.toDelete;
+            toTransform.offset += transformBy.toInsert.length;
+            return;// toTransform;
+        }
+        // goto the end, anything you deleted that they also deleted should be skipped.
+        var newOffset = transformBy.offset + transformBy.toDelete + 1;
+        toTransform.toDelete -= (newOffset - toTrandform.offset);
+        if (toTransform.toDelete < 0) { toTransform.toDelete = 0; }
+        toTransform.offset = newOffset;
+        return;// toTransform;
+    }
+    if (toTransform.offset + toTransform.toDelete < transformBy.offset) {
+        return;// toTransform;
+    }
+    //toTransform = clone(toTransform);
+    toTransform.toDelete = transformBy.offset - toTransform.offset;
+    return;// toTransform;
 };
 
 /** Used for testing. */
@@ -317,7 +224,7 @@ var random = Operation.random = function (docLength) {
     do {
         op.toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
     } while (op.toDelete === 0 && op.toInsert === '');
-    check(op);
+    if (Common.PARANOIA) { check(op); }
     return op;
 };
 

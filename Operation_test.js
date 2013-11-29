@@ -1,3 +1,18 @@
+/* vim: set expandtab ts=4 sw=4: */
+/*
+ * You may redistribute this program and/or modify it under the terms of
+ * the GNU Lesser General Public License as published by the Free Software
+ * Foundation, either version 2.1 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 var Common = require('./Common');
 var Operation = require('./Operation');
 
@@ -8,14 +23,13 @@ var applyReversibility = function () {
     var docx = doc;
     for (var i = 0; i < 1000; i++) {
         operations[i] = Operation.random(docx.length);
-        var out = Operation.apply(operations[i], docx);
-        docx = out.doc;
-        rOperations[i] = out.inverse;
+        rOperations[i] = Operation.invert(operations[i], docx);
+        docx = Operation.apply(operations[i], docx);
     }
     for (var i = 1000-1; i >= 0; i--) {
-        var out = Operation.apply(rOperations[i], docx);
-        docx = out.doc;
-        if (JSON.stringify(operations[i]) !== JSON.stringify(out.inverse)) {
+        var inverse = Operation.invert(rOperations[i], docx);
+        docx = Operation.apply(rOperations[i], docx);
+        if (JSON.stringify(operations[i]) !== JSON.stringify(inverse)) {
             throw new Error("the inverse of the inverse is not the forward:\n" +
                 JSON.stringify(operations[i], null, '  ') + "\n" +
                 JSON.stringify(out.inverse, null, '  '));
@@ -40,22 +54,24 @@ var toObjectFromObject = function () {
 var mergeOne = function () {
     var docA = Common.randomASCII(Math.floor(Math.random() * 100)+1);
     var opAB = Operation.random(docA.length);
-    var docB = Operation.apply(opAB, docA).doc;
+    var docB = Operation.apply(opAB, docA);
     var opBC = Operation.random(docB.length);
-    var docC = Operation.apply(opBC, docB).doc;
+    var docC = Operation.apply(opBC, docB);
 
-    if (Operation.rebase(opAB, opBC) === null) {
+    if (Operation.shouldMerge(opAB, opBC)) {
         var opAC = Operation.merge(opAB, opBC);
         var docC2 = docA;
-        if (opAC !== null) {
-            docC2 = Operation.apply(opAC, docA).doc;
-        }
-        if (docC2 !== docC) {
+        try {
+            if (opAC !== null) {
+                docC2 = Operation.apply(opAC, docA);
+            }
+            Common.assert(docC2 === docC);
+        } catch (e) {
             console.log("merging:\n" +
                 JSON.stringify(opAB, null, '  ') + "\n" +
                 JSON.stringify(opBC, null, '  '));
             console.log("result:\n" + JSON.stringify(opAC, null, '  '));
-            throw new Error();
+            throw e;
         }
     }
 };

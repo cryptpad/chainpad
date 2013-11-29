@@ -1,0 +1,34 @@
+<html>
+<!--
+ * You may redistribute this program and/or modify it under the terms of
+ * the GNU Lesser General Public License as published by the Free Software
+ * Foundation, either version 2.1 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ -->
+<head></head>
+<body></body>
+<script src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
+<script src="http://127.0.0.1:8081/realtime-mockup/jsdiff.js"></script>
+<script>
+$(function() {
+    var oldABC = 'abcdefg';//$('#abc').val();
+$('#abc').val(oldABC);
+console.log(oldABC);
+    $('#abc').keyup(function (ev) {
+        var d = diff(oldABC, $('#abc').val());
+console.log(d);
+        //oldABC = d.n;
+    });
+});
+</script>
+<textarea id="abc"></textarea>
+<textarea id="def"></textarea>
+</html>
