@@ -18,7 +18,7 @@ var Operation = require('./Operation');
 var Patch = require('./Patch');
 
 // These are fuzz tests so increasing these numbers might catch more errors.
-var CYCLES = 10000;
+var CYCLES = 100;
 var OPERATIONS = 1000;
 
 var addOperationConst = function (origDoc, expectedDoc, operations) {

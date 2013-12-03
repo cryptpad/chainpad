@@ -82,6 +82,7 @@ the user's uncommitted work to the new state of the user's uncommitted work.
 Each operation in this patch is sent out to the binding as an Insert or Delete message to
 update the user interface.
 
+DOESNT WORK
 When a patch comes in which is the user's own patch, we apply the patch to the authoritative
 document and add it's inverse to the list of inverse patches as is the usual and then
 instead of transforming we merge the inverse of this patch with the user's uncommitted work,

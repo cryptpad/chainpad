@@ -65,8 +65,8 @@ var fromObj = Patch.fromObj = function (obj) {
     return patch;
 };
 
-var hashOf = Patch.hashOf = function (patch) {
-    return Sha.hex_sha256(JSON.stringify(toObj(patch)));
+var hash = function (text) {
+    return Sha.hex_sha256(text);
 };
 
 var addOperation = Patch.addOperation = function (patch, op) {
@@ -126,11 +126,23 @@ var apply = Patch.apply = function (patch, doc)
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
+        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
+    var newDoc = doc;
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        doc = Operation.apply(patch.operations[i], doc);
+        newDoc = Operation.apply(patch.operations[i], newDoc);
     }
-    return doc;
+    return newDoc;
+};
+
+var lengthChange = Patch.lengthChange = function (patch)
+{
+    if (Common.PARANOIA) { check(patch); }
+    var out = 0;
+    for (var i = 0; i < patch.operations.length; i++) {
+        out += Operation.lengthChange(patch.operations[i]);
+    }
+    return out;
 };
 
 var invert = Patch.invert = function (patch, doc)
@@ -138,11 +150,13 @@ var invert = Patch.invert = function (patch, doc)
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
+        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
     var rpatch = create();
+    var newDoc = doc;
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        rpatch.operations[i] = Operation.invert(patch.operations[i], doc);
-        doc = Operation.apply(patch.operations[i], doc);
+        rpatch.operations[i] = Operation.invert(patch.operations[i], newDoc);
+        newDoc = Operation.apply(patch.operations[i], newDoc);
     }
     for (var i = rpatch.operations.length-1; i >= 0; i--) {
         for (var j = i - 1; j >= 0; j--) {
@@ -150,7 +164,7 @@ var invert = Patch.invert = function (patch, doc)
             rpatch.operations[i].offset -= rpatch.operations[j].toInsert.length;
         }
     }
-    rpatch.parentHash = Patch.hashOf(patch);
+    rpatch.parentHash = Sha.hex_sha256(newDoc);
     if (Common.PARANOIA) { check(rpatch); }
     return rpatch;
 };

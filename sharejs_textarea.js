@@ -75,9 +75,7 @@ var applyChange = function(ctx, oldval, newval) {
 //
 // The context is optional, and will be created from the document if its not
 // specified.
-var attachTextarea = function(elem, ctx) {
-
-  elem.value = ctx.get();
+var attachTextarea = function(elem, ctx, originalState) {
 
   // The current value of the element's text is stored so we can quickly check
   // if its been changed in the event handlers. This is mostly for browsers on
@@ -85,7 +83,7 @@ var attachTextarea = function(elem, ctx) {
   // called after the \r\n newlines are converted, and that check is quite
   // slow. So we also cache the string before conversion so we can do a quick
   // check incase the conversion isn't needed.
-  var prevvalue;
+  var prevvalue = originalState;
 
   // Replace the content of the text area with newText, and transform the
   // current cursor by the specified function.
@@ -110,23 +108,12 @@ var attachTextarea = function(elem, ctx) {
     }
   };
 
-  replaceText(ctx.get());
+  //replaceText(ctx.get());
 
 
   // *** remote -> local changes
 
-  ctx.onInsert = function(pos, text) {
-    var transformCursor = function(cursor) {
-      return pos < cursor ? cursor + text.length : cursor;
-    };
-
-    // Remove any window-style newline characters. Windows inserts these, and
-    // they mess up the generated diff.
-    var prev = elem.value.replace(/\r\n/g, '\n');
-    replaceText(prev.slice(0, pos) + text + prev.slice(pos), transformCursor);
-  };
-
-  ctx.onRemove = function(pos, length) {
+  ctx.onRemove(function(pos, length) {
     var transformCursor = function(cursor) {
       // If the cursor is inside the deleted region, we only want to move back to the start
       // of the region. Hence the Math.min.
@@ -135,7 +122,18 @@ var attachTextarea = function(elem, ctx) {
 
     var prev = elem.value.replace(/\r\n/g, '\n');
     replaceText(prev.slice(0, pos) + prev.slice(pos + length), transformCursor);
-  };
+  });
+
+  ctx.onInsert(function(pos, text) {
+    var transformCursor = function(cursor) {
+      return pos < cursor ? cursor + text.length : cursor;
+    };
+
+    // Remove any window-style newline characters. Windows inserts these, and
+    // they mess up the generated diff.
+    var prev = elem.value.replace(/\r\n/g, '\n');
+    replaceText(prev.slice(0, pos) + text + prev.slice(pos), transformCursor);
+  });
 
 
   // *** local -> remote changes
@@ -145,8 +143,9 @@ var attachTextarea = function(elem, ctx) {
     // In a timeout so the browser has time to propogate the event's changes to the DOM.
     setTimeout(function() {
       if (elem.value !== prevvalue) {
+        var prev = prevvalue;
         prevvalue = elem.value;
-        applyChange(ctx, ctx.get(), elem.value.replace(/\r\n/g, '\n'));
+        applyChange(ctx, prev, elem.value.replace(/\r\n/g, '\n'));
       }
     }, 0);
   };

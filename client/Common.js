@@ -13,8 +13,9 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-var Common = {};
-Common.PARANOIA = false;
+var Common = module.exports;
+
+Common.PARANOIA = true;
 
 var assert = Common.assert = function (expr) {
     if (!expr) { throw new Error("Failed assertion"); }
@@ -45,5 +46,3 @@ var compareHashes = Common.compareHashes = function (hashA, hashB) {
     }
     return 0;
 };
-
-module.exports = Common;

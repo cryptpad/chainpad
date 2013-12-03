@@ -16,7 +16,6 @@
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
-var RegisterMessage = require('./RegisterMessage');
 
 var Message = module.exports;
 
@@ -26,22 +25,23 @@ var PATCH        = Message.PATCH        = 2;
 
 var check = Message.check = function(msg) {
     Common.assert(msg.type === 'Message');
+    Common.assert(typeof(msg.userName) === 'string');
+    Common.assert(typeof(msg.authToken) === 'string');
     Common.assert(typeof(msg.channelId) === 'string');
-    Common.assert(msg.channelId.indexOf('|') === -1);
-    if (msg.messageType === REGISTER) {
-        RegisterMessage.check(msg.content);
-    } else if (msg.messageType === PATCH) {
+
+    if (msg.messageType === PATCH) {
         Patch.check(msg.content);
-    } else {
+    } else if (msg.messageType !== REGISTER && msg.messageType !== REGISTER_ACK) {
         throw new Error("invalid message type [" + msg.messageType + "]");
     }
 };
 
-var create = Message.create = function (channelId, type, content) {
+var create = Message.create = function (userName, authToken, channelId, type, content) {
     var msg = {
         type: 'Message',
+        userName: userName,
+        authToken: authToken,
         channelId: channelId,
-        author: '',
         messageType: type,
         content: content
     };
@@ -53,36 +53,44 @@ var toString = Message.toString = function (msg) {
     if (Common.PARANOIA) { check(msg); }
     var prefix = msg.messageType + ':';
     var content = '';
-    if (msg.messageType === PATCH_REQ) {
-        content = JSON.stringify([PATCH_REQ, RegisterMessage.toObj(msg.content)]);
+    if (msg.messageType === REGISTER) {
+        content = JSON.stringify([REGISTER, 0]);
     } else if (msg.messageType === PATCH) {
         content = JSON.stringify([PATCH, Patch.toObj(msg.content)]);
     }
-    return msg.channelId + "|" + content.length + ':' + content;
+    return msg.authToken.length + ":" + msg.authToken +
+        msg.userName.length + ":" + msg.userName +
+        msg.channelId.length + ":" + msg.channelId +
+        content.length + ':' + content;
 };
 
 var fromString = Message.fromString = function (str) {
-    var matches = /^([^\|]*)\|([^|]*)\|([0-9]+):(.*)$/.exec(str);
-    matches.shift();
-    var channelId = decodeURIComponent(matches.shift());
-    var author = decodeURIComponent(matches.shift());
-    var length = matches.shift();
-    var contentStrAndMore = matches.shift();
-    var contentStr = contentStrAndMore.substring(0,length);
-    if (contentStr.length < length) {
-        return {
-            result: null,
-            more: str
-        };
-    }
+    var msg = str;
+
+    var unameLen = msg.substring(0,msg.indexOf(':'));
+    msg = msg.substring(unameLen.length+1);
+    var userName = msg.substring(0,Number(unameLen));
+    msg = msg.substring(userName.length);
+
+    var channelIdLen = msg.substring(0,msg.indexOf(':'));
+    msg = msg.substring(channelIdLen.length+1);
+    var channelId = msg.substring(0,Number(channelIdLen));
+    msg = msg.substring(channelId.length);
+
+    var contentStrLen = msg.substring(0,msg.indexOf(':'));
+    msg = msg.substring(contentStrLen.length+1);
+    var contentStr = msg.substring(0,Number(contentStrLen));
+
+    Common.assert(contentStr.length === Number(contentStrLen));
+
     var content = JSON.parse(contentStr);
-    var more = contentStr.substring(length);
-    var message = Message.create(channelId, content[0], content[1]);
-    message.author = author;
+    if (content[0] === PATCH) {
+        content[1] = Patch.fromObj(content[1]);
+    }
+    var message = create(userName, '', channelId, content[0], content[1]);
+
     // This check validates every operation in the patch.
     check(message);
-    return {
-        result: message,
-        more: more
-    };
+
+    return message
 };

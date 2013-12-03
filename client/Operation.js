@@ -30,7 +30,7 @@ var check = Operation.check = function (op, docLength_opt) {
     Common.assert(Common.isUint(op.toDelete));
     Common.assert(typeof(op.toInsert) === 'string');
     Common.assert(op.toDelete > 0 || op.toInsert.length > 0);
-    Common.assert(typeof(docLength_opt) !== 'number' || op.length + op.toDelete <= docLength_opt);
+    Common.assert(typeof(docLength_opt) !== 'number' || op.offset + op.toDelete <= docLength_opt);
 };
 
 var toObj = Operation.toObj = function (op) {
@@ -96,6 +96,10 @@ var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
     if (Common.PARANOIA) {
         check(newOpOrig);
         check(oldOpOrig);
+    }
+
+    if (JSON.stringify(oldOpOrig) === JSON.stringify(newOpOrig)) {
+        return null;
     }
 
     var newOp = clone(newOpOrig);
