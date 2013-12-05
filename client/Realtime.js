@@ -37,6 +37,10 @@ var enterRealtime = function (realtime, func) {
     };
 };
 
+var debug = function (realtime, msg) {
+    console.log("[" + realtime.userName + "]  " + msg);
+};
+
 var schedule = function (realtime, func) {
     var time = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
     var to = setTimeout(enterRealtime(realtime, function () {
@@ -44,12 +48,19 @@ var schedule = function (realtime, func) {
         func();
     }), time);
     realtime.schedules.push(to);
+    return to;
 };
 
 var sync = function (realtime) {
-    schedule(realtime, function () { sync(realtime); });
+    if (realtime.syncSchedule) {
+        clearTimeout(realtime.syncSchedule);
+    }
+    realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
+
+    realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+
     if (realtime.uncommitted.operations.length === 0) {
-        //console.log("No data to sync to the server, sleeping");
+        //debug(realtime, "No data to sync to the server, sleeping");
         return;
     }
 
@@ -61,7 +72,7 @@ var sync = function (realtime) {
 
     realtime.onMessage(Message.toString(msg), function (err) {
         if (err) {
-            console.log("Posting to server failed [" + err + "]");
+            debug(realtime, "Posting to server failed [" + err + "]");
         }
     });
 };
@@ -76,7 +87,7 @@ var getMessages = function (realtime) {
                              '');
     realtime.onMessage(Message.toString(msg), function (err) {
         if (err) {
-            console.log("Requesting patches from server failed [" + err + "] try again");
+            debug(realtime, "Requesting patches from server failed [" + err + "] try again");
         }
     });
 };
@@ -113,15 +124,21 @@ var create = Realtime.create = function (userName, authToken, channelId, initial
 
         schedules: [],
 
+        syncSchedule: null,
+
         registered: false,
 
-        avgSyncTime: 200,
+        avgSyncTime: 10000,
 
         // this is only used if PARANOIA is enabled.
-        userInterfaceContent: '',
+        userInterfaceContent: undefined,
 
         failed: false
     };
+
+    if (Common.PARANOIA) {
+        realtime.userInterfaceContent = initialState;
+    }
 
     if (initialState !== '') {
         var initialPatch = realtime.uncommitted;
@@ -142,8 +159,11 @@ var check = Realtime.check = function(realtime) {
     Common.assert(Array.isArray(realtime.rpatches));
 
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
+
     var uiDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
-    Common.assert(uiDoc.length === realtime.uncommittedDocLength);
+    if (uiDoc.length !== realtime.uncommittedDocLength) {
+        Common.assert(0);
+    }
     if (realtime.userInterfaceContent !== '') {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
@@ -161,61 +181,85 @@ var doOperation = Realtime.doOperation = function (realtime, op) {
         check(realtime);
         realtime.userInterfaceContent = Operation.apply(op, realtime.userInterfaceContent);
     }
-console.log("OPERATION");
     Operation.check(op, realtime.uncommittedDocLength);
     Patch.addOperation(realtime.uncommitted, op);
+debug(realtime, JSON.stringify(realtime.uncommitted));
     realtime.uncommittedDocLength += Operation.lengthChange(op);
 };
 
 var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
+    if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
     Common.assert(msg.channelId === realtime.channelId);
 
     if (msg.messageType === Message.REGISTER_ACK) {
-        console.log("registered");
+        debug(realtime, "registered");
         realtime.registered = true;
         return;
     }
-
+debug(realtime, "msg");
     Common.assert(msg.messageType === Message.PATCH);
 
     var patch = msg.content;
-    // TODO: We calculate the hash of the patch twice, once to invert it.
-    //var hash = Patch.hashOf(patch);
 
     // First we will search for the base of this patch.
     var rollbackPatch = null;
 
     var hashes = [];
-    var nextHash = realtime.uncommitted.parentHash;
-    for (var i = realtime.rpatches.length-1;;) {
-        if (patch.parentHash === nextHash) {
+
+    var i;
+    for (i = realtime.rpatches.length-1; i >= 0; i--) {
+        if (patch.parentHash === realtime.rpatches[i].parentHash) {
             // Found the point where it's rooted.
             break;
         }
-        nextHash = realtime.rpatches[i].parentHash;
         if (!rollbackPatch) {
+            Common.assert(realtime.rpatches[i].parentHash === realtime.uncommitted.parentHash);
             rollbackPatch = realtime.rpatches[i];
         } else {
             rollbackPatch = Patch.merge(rollbackPatch, realtime.rpatches[i]);
         }
-        hashes.push(nextHash);
-        i--;
-        if (i < 0) {
-            console.log("base [" + patch.parentHash + "] of patch not found");
-            return;
-        }
+        hashes.push(realtime.rpatches[i].parentHash);
+    }
+
+    if (rollbackPatch) {
+        debug(realtime, "Rejecting patch ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+        if (Common.PARANOIA) { check(realtime); }
+        return;
+    }
+
+    if (i < 0 && (realtime.rpatches.length !== 0 && patch.parentHash !== EMPTY_STR_HASH)) {
+        debug(realtime, "base of patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] not found");
+try{
+        //Common.assert(msg.userName !== realtime.userName);
+}catch(e){
+debug(realtime, JSON.stringify(realtime.rpatches, null, '    '));
+throw e;
+}
+        if (Common.PARANOIA) { check(realtime); }
+        return;
     }
 
     var authDocAtTimeOfPatch = realtime.authDoc;
     var patchToApply = patch;
     if (rollbackPatch !== null) {
-        authDocAtTimeOfPatch = Patch.apply(rollbackPatch, authDocAtTimeOfPatch);
         if (Common.PARANOIA) {
             Common.assert(Sha.hex_sha256(authDocAtTimeOfPatch) === rollbackPatch.parentHash);
         }
+try{
+        authDocAtTimeOfPatch = Patch.apply(rollbackPatch, authDocAtTimeOfPatch);
+}catch (e) {
+debug(realtime, JSON.stringify(rollbackPatch));
+debug(realtime, authDocAtTimeOfPatch);
+throw e;
+}
+        if (Common.PARANOIA) {
+            Common.assert(Sha.hex_sha256(authDocAtTimeOfPatch) === patch.parentHash);
+        }
         patchToApply = Patch.merge(rollbackPatch, patch);
     }
+
+
 
     var rpatch = Patch.invert(patch, authDocAtTimeOfPatch);
 
@@ -223,36 +267,70 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
     // of all results which it displaces
     for (var i = 0; i < hashes.length; i++) {
         if (Common.compareHashes(rpatch.parentHash, hashes[i]) > 0) {
-            console.log("patch [" + rpatch.parentHash + "] rejected");
+            debug(realtime, "patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] rejected");
+            if (Common.PARANOIA) { check(realtime); }
             return;
         }
     }
 
     // ok we're really going to do this
+
+    for (var i = 0; i < hashes.length; i++) {
+        debug(realtime, "reverting [" + hashes[i] + "]");
+        realtime.rpatches.pop();
+    }
+    debug(realtime, "applying ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+
     realtime.rpatches.push(rpatch);
-//console.log("newhash " + rpatch.parentHash);
-//console.log(realtime.authDoc);
+
+//debug(realtime, "newhash " + rpatch.parentHash);
+//debug(realtime, realtime.authDoc);
+
+    realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+
+    var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
+
+    if (Common.PARANOIA) {
+        Common.assert(userInterfaceContent === realtime.userInterfaceContent);
+    }
+
     var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
+
+    var oldAuthDoc = realtime.authDoc;
 
     // apply the patch to the authoritative document
     realtime.authDoc = Patch.apply(patchToApply, realtime.authDoc);
 
-    if (msg.userName === realtime.userName) {
-        // We should not be forcing ourselves to roll anything back.
-        Common.assert(patchToApply === patch);
-        Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
-
-//console.log(JSON.stringify(inverseOldUncommitted) + 'xxx' + JSON.stringify(patch));
-        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patch);
-        realtime.uncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
-        Common.assert(realtime.uncommitted.parentHash === rpatch.parentHash);
-//console.log(JSON.stringify(realtime.uncommitted));
-        return;
-    }
 
     // transform the uncommitted work
-    realtime.uncommitted = Patch.transform(realtime.uncommitted, patchToApply);
+    realtime.uncommitted = Patch.transform(realtime.uncommitted, patchToApply, oldAuthDoc);
     realtime.uncommitted.parentHash = rpatch.parentHash;
+
+    if (msg.userName === realtime.userName) {
+        // We should not be forcing ourselves to roll anything back.
+        // Wrong, we pushed our patch then received a patch from someone else re-rooting us,
+        // then we received our own patch which switches us back.
+        //Common.assert(patchToApply === patch);
+        //Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
+
+//debug(realtime, JSON.stringify(inverseOldUncommitted) + 'xxx' + JSON.stringify(patch));
+        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patchToApply);
+        realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
+
+        realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+
+        //realtime.uncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
+        //realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
+
+//debug(realtime, JSON.stringify(realtime.uncommitted));
+
+        if (patchToApply === patch) {
+            Common.assert(realtime.uncommitted.parentHash === rpatch.parentHash);
+            if (Common.PARANOIA) { check(realtime); }
+            return;
+        }
+//debug(realtime, JSON.stringify(realtime.uncommitted));
+    }
 
     // Derive the patch for the user's uncommitted work
     var uncommittedPatch = Patch.merge(inverseOldUncommitted, patchToApply);
@@ -266,7 +344,7 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
         realtime.userInterfaceContent =
             Patch.apply(uncommittedPatch, realtime.userInterfaceContent);
         Common.assert(realtime.userInterfaceContent.length === realtime.uncommittedDocLength);
-        console.log(">"+realtime.userInterfaceContent);
+        debug(realtime, ">"+realtime.userInterfaceContent);
     }
 
     // push the uncommittedPatch out to the user interface.
@@ -275,6 +353,7 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
             realtime.opHandlers[j](uncommittedPatch.operations[i]);
         }
     }
+    if (Common.PARANOIA) { check(realtime); }
 };
 
 module.exports.create = function (userName, authToken, channelId, initialState) {
@@ -321,9 +400,8 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
         abort: enterRealtime(realtime, function () {
             realtime.schedules.forEach(function (s) { clearTimeout(s) });
         }),
-        setAvgSyncTime: enterRealtime(realtime, function (time) {
-            Common.assert(typeof(time) === 'number' && time >= 0);
-            realtime.avgSyncTime = time;
+        sync: enterRealtime(realtime, function () {
+            sync(realtime);
         })
     };
 };

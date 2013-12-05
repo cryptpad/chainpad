@@ -83,6 +83,33 @@ var invert = Operation.invert = function (op, doc) {
     return rop;
 };
 
+var simplify = Operation.simplify = function (op, doc) {
+    if (Common.PARANOIA) {
+        check(op);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(op.offset + op.toDelete <= doc.length);
+    }
+    var rop = invert(op, doc);
+    op = clone(op);
+
+    var minLen = Math.min(op.toInsert.length, rop.toInsert.length);
+    var i;
+    for (i = 0; i < minLen && rop.toInsert[i] === op.toInsert[i]; i++) ;
+    op.offset += i;
+    op.toDelete -= i;
+    op.toInsert = op.toInsert.substring(i);
+    rop.toInsert = rop.toInsert.substring(i);
+
+    if (rop.toInsert.length === op.toInsert.length) {
+        for (i = rop.toInsert.length-1; i >= 0 && rop.toInsert[i] === op.toInsert[i]; i--) ;
+        op.toInsert = op.toInsert.substring(0, i+1);
+        op.toDelete = i+1;
+    }
+
+    if (op.toDelete === 0 && op.toInsert.length === 0) { return null; }
+    return op;
+};
+
 var lengthChange = Operation.lengthChange = function (op)
 {
     if (Common.PARANOIA) { check(op); }
@@ -96,10 +123,6 @@ var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
     if (Common.PARANOIA) {
         check(newOpOrig);
         check(oldOpOrig);
-    }
-
-    if (JSON.stringify(oldOpOrig) === JSON.stringify(newOpOrig)) {
-        return null;
     }
 
     var newOp = clone(newOpOrig);
@@ -197,26 +220,32 @@ var transform = Operation.transform = function (toTransform, transformBy) {
         check(transformBy);
     }
     if (toTransform.offset > transformBy.offset) {
-        //toTransform = clone(toTransform);
+        toTransform = clone(toTransform);
         if (toTransform.offset > transformBy.offset + transformBy.toDelete) {
             // simple rebase
             toTransform.offset -= transformBy.toDelete;
             toTransform.offset += transformBy.toInsert.length;
-            return;// toTransform;
+            return toTransform;
         }
         // goto the end, anything you deleted that they also deleted should be skipped.
-        var newOffset = transformBy.offset + transformBy.toDelete + 1;
-        toTransform.toDelete -= (newOffset - toTrandform.offset);
+        var newOffset = transformBy.offset + transformBy.toInsert.length;
+        toTransform.toDelete = 0; //-= (newOffset - toTransform.offset);
         if (toTransform.toDelete < 0) { toTransform.toDelete = 0; }
         toTransform.offset = newOffset;
-        return;// toTransform;
+        if (toTransform.toInsert.length === 0 && toTransform.toDelete === 0) {
+            return null;
+        }
+        return toTransform;
     }
     if (toTransform.offset + toTransform.toDelete < transformBy.offset) {
-        return;// toTransform;
+        return toTransform;
     }
-    //toTransform = clone(toTransform);
+    toTransform = clone(toTransform);
     toTransform.toDelete = transformBy.offset - toTransform.offset;
-    return;// toTransform;
+    if (toTransform.toInsert.length === 0 && toTransform.toDelete === 0) {
+        return null;
+    }
+    return toTransform;
 };
 
 /** Used for testing. */

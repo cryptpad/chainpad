@@ -1,0 +1,4 @@
+if youer work is destroied by a rebase, you need to put it back into uncommitted\
+consensus not guaranteed
+
+

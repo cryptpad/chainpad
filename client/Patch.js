@@ -169,23 +169,82 @@ var invert = Patch.invert = function (patch, doc)
     return rpatch;
 };
 
-var transform = Patch.transform = function (toTransform, transformBy) {
+var simplify = Patch.simplify = function (patch, doc)
+{
     if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
+        check(patch);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
-    var out = clone(toTransform);
-    for (var i = out.operations.length-1; i >= 0; i--) {
-        for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            Operation.transform(out.operations[i], transformBy.operations[j]);
+    var spatch = create(patch.parentHash);
+    var newDoc = doc;
+    var outOps = [];
+    var j = 0;
+    for (var i = patch.operations.length-1; i >= 0; i--) {
+        outOps[j] = Operation.simplify(patch.operations[i], newDoc);
+        if (outOps[j]) {
+            newDoc = Operation.apply(outOps[j], newDoc);
+            j++;
         }
+    }
+    spatch.operations = outOps.reverse();
+    if (!spatch.operations[0]) {
+        spatch.operations.shift();
+    }
+    if (Common.PARANOIA) {
+        check(spatch);
+    }
+    return spatch;
+};
+
+var transform = Patch.transform = function (origToTransform, transformBy, doc) {
+    if (Common.PARANOIA) {
+        check(origToTransform, doc.length);
+        check(transformBy, doc.length);
+        Common.assert(Sha.hex_sha256(doc) === origToTransform.parentHash);
+    }
+    Common.assert(origToTransform.parentHash === transformBy.parentHash);
+    var resultOfTransformBy = apply(transformBy, doc);
+
+    toTransform = clone(origToTransform);
+    for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        for (var j = transformBy.operations.length-1; j >= 0; j--) {
+            toTransform.operations[i] =
+                Operation.transform(toTransform.operations[i], transformBy.operations[j]);
+            if (!toTransform.operations[i]) {
+                break;
+            }
+        }
+        if (Common.PARANOIA && toTransform.operations[i]) {
+try {
+            Operation.check(toTransform.operations[i], resultOfTransformBy.length);
+} catch (e) {
+console.log('transform('+JSON.stringify([origToTransform,transformBy,doc], null, '  ')+');');
+console.log(JSON.stringify(toTransform.operations[i]));
+throw e;
+}
+        }
+    }
+    var out = create(transformBy.parentHash);
+    for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        if (toTransform.operations[i]) {
+            addOperation(out, toTransform.operations[i]);
+        }
+    }
+
+    out.parentHash = Sha.hex_sha256(resultOfTransformBy);
+
+    if (Common.PARANOIA) {
+        check(out, resultOfTransformBy.length);
     }
     return out;
 }
 
-var random = Patch.random = function (docLength, opCount) {
+var random = Patch.random = function (doc, opCount) {
+    Common.assert(typeof(doc) === 'string');
     opCount = opCount || (Math.floor(Math.random() * 30) + 1);
-    var patch = create('0000000000000000000000000000000000000000000000000000000000000000');
+    var patch = create(Sha.hex_sha256(doc));
+    var docLength = doc.length;
     while (opCount-- > 0) {
         var op = Operation.random(docLength);
         docLength += Operation.lengthChange(op);

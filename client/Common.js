@@ -30,7 +30,7 @@ var isUint = Common.isUint = function (integer) {
 var randomASCII = Common.randomASCII = function (length) {
     var content = [];
     for (var i = 0; i < length; i++) {
-        content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 94 + 32 );
+        content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 57 + 65 );
     }
     return content.join('');
 };

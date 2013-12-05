@@ -1,6 +1,203 @@
 (function(){function require(e,t,n){t||(t=0);var r=require.resolve(e,t),i=require.m[t][r];if(!i)throw new Error('failed to require "'+e+'" from '+n);if(i.c){t=i.c,r=i.m,i=require.m[t][i.m];if(!i)throw new Error('failed to require "'+r+'" from '+t)}return i.exports||(i.exports={},i.call(i.exports,i,i.exports,require.relative(r,t))),i.exports}require.resolve=function(e,t){var n=e,r=e+".js",i=e+"/index.js";return require.m[t][r]&&r?r:require.m[t][i]&&i?i:n},require.relative=function(e,t){return function(n){if("."!=n.charAt(0))return require(n,t,e);var r=e.split("/"),i=n.split("/");r.pop();for(var s=0;s<i.length;s++){var o=i[s];".."==o?r.pop():"."!=o&&r.push(o)}return require(r.join("/"),t,e)}};
 require.m = [];
 require.m[0] = {
+"Fork.js": function(module, exports, require){
+/* vim: set expandtab ts=4 sw=4: */
+/*
+ * You may redistribute this program and/or modify it under the terms of
+ * the GNU Lesser General Public License as published by the Free Software
+ * Foundation, either version 2.1 of the License, or (at your option) any
+ * later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+var Common = require('./Common');
+var Patch = require('./Patch');
+
+var Fork = module.exports;
+
+var create = Patch.create = function (parent) {
+    return {
+        type: 'Fork',
+        parent: parent,
+        
+    };
+};
+
+var check = Patch.check = function (patch, docLength_opt) {
+    Common.assert(patch.type === 'Patch');
+    Common.assert(Array.isArray(patch.operations));
+    Common.assert(/^[0-9a-f]{64}$/.test(patch.parentHash));
+    for (var i = patch.operations.length - 1; i >= 0; i--) {
+        Operation.check(patch.operations[i], docLength_opt);
+        if (i > 0) {
+            Common.assert(!Operation.shouldMerge(patch.operations[i], patch.operations[i-1]));
+        }
+        if (typeof(docLength_opt) === 'number') {
+            docLength_opt += Operation.lengthChange(patch.operations[i]);
+        }
+    }
+};
+
+var toObj = Patch.toObj = function (patch) {
+    if (Common.PARANOIA) { check(patch); }
+    var out = new Array(patch.operations.length+1);
+    var i;
+    for (i = 0; i < patch.operations.length; i++) {
+        out[i] = Operation.toObj(patch.operations[i]);
+    }
+    out[i] = patch.parentHash;
+    return out;
+};
+
+var fromObj = Patch.fromObj = function (obj) {
+    Common.assert(Array.isArray(obj) && obj.length > 0);
+    var patch = create();
+    var i;
+    for (i = 0; i < obj.length-1; i++) {
+        patch.operations[i] = Operation.fromObj(obj[i]);
+    }
+    patch.parentHash = obj[i];
+    if (Common.PARANOIA) { check(patch); }
+    return patch;
+};
+
+var hash = function (text) {
+    return Sha.hex_sha256(text);
+};
+
+var addOperation = Patch.addOperation = function (patch, op) {
+    if (Common.PARANOIA) {
+        check(patch);
+        Operation.check(op);
+    }
+    for (var i = 0; i < patch.operations.length; i++) {
+        if (Operation.shouldMerge(patch.operations[i], op)) {
+            op = Operation.merge(patch.operations[i], op);
+            patch.operations.splice(i,1);
+            if (op === null) {
+                //console.log("operations cancelled eachother");
+                return;
+            }
+            i--;
+        } else {
+            var out = Operation.rebase(patch.operations[i], op);
+            if (out === op) {
+                // op could not be rebased further, insert it here to keep the list ordered.
+                patch.operations.splice(i,0,op);
+                return;
+            } else {
+                op = out;
+                // op was rebased, try rebasing it against the next operation.
+            }
+        }
+    }
+    patch.operations.push(op);
+    if (Common.PARANOIA) { check(patch); }
+};
+
+var clone = Patch.clone = function (patch) {
+    if (Common.PARANOIA) { check(patch); }
+    var out = create();
+    out.parentHash = patch.parentHash;
+    for (var i = 0; i < patch.operations.length; i++) {
+        out.operations[i] = Operation.clone(patch.operations[i]);
+    }
+    return out;
+};
+
+var merge = Patch.merge = function (oldPatch, newPatch) {
+    if (Common.PARANOIA) {
+        check(oldPatch);
+        check(newPatch);
+    }
+    oldPatch = clone(oldPatch);
+    for (var i = newPatch.operations.length-1; i >= 0; i--) {
+        addOperation(oldPatch, newPatch.operations[i]);
+    }
+    return oldPatch;
+};
+
+var apply = Patch.apply = function (patch, doc)
+{
+    if (Common.PARANOIA) {
+        check(patch);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
+    }
+    var newDoc = doc;
+    for (var i = patch.operations.length-1; i >= 0; i--) {
+        newDoc = Operation.apply(patch.operations[i], newDoc);
+    }
+    return newDoc;
+};
+
+var lengthChange = Patch.lengthChange = function (patch)
+{
+    if (Common.PARANOIA) { check(patch); }
+    var out = 0;
+    for (var i = 0; i < patch.operations.length; i++) {
+        out += Operation.lengthChange(patch.operations[i]);
+    }
+    return out;
+};
+
+var invert = Patch.invert = function (patch, doc)
+{
+    if (Common.PARANOIA) {
+        check(patch);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
+    }
+    var rpatch = create();
+    var newDoc = doc;
+    for (var i = patch.operations.length-1; i >= 0; i--) {
+        rpatch.operations[i] = Operation.invert(patch.operations[i], newDoc);
+        newDoc = Operation.apply(patch.operations[i], newDoc);
+    }
+    for (var i = rpatch.operations.length-1; i >= 0; i--) {
+        for (var j = i - 1; j >= 0; j--) {
+            rpatch.operations[i].offset += rpatch.operations[j].toDelete;
+            rpatch.operations[i].offset -= rpatch.operations[j].toInsert.length;
+        }
+    }
+    rpatch.parentHash = Sha.hex_sha256(newDoc);
+    if (Common.PARANOIA) { check(rpatch); }
+    return rpatch;
+};
+
+var transform = Patch.transform = function (toTransform, transformBy) {
+    if (Common.PARANOIA) {
+        check(toTransform);
+        check(transformBy);
+    }
+    var out = clone(toTransform);
+    for (var i = out.operations.length-1; i >= 0; i--) {
+        for (var j = transformBy.operations.length-1; j >= 0; j--) {
+            Operation.transform(out.operations[i], transformBy.operations[j]);
+        }
+    }
+    return out;
+}
+
+var random = Patch.random = function (docLength, opCount) {
+    opCount = opCount || (Math.floor(Math.random() * 30) + 1);
+    var patch = create('0000000000000000000000000000000000000000000000000000000000000000');
+    while (opCount-- > 0) {
+        var op = Operation.random(docLength);
+        docLength += Operation.lengthChange(op);
+        addOperation(patch, op);
+    }
+    check(patch);
+    return patch;
+};
+},
 "Patch.js": function(module, exports, require){
 /* vim: set expandtab ts=4 sw=4: */
 /*
@@ -173,23 +370,82 @@ var invert = Patch.invert = function (patch, doc)
     return rpatch;
 };
 
-var transform = Patch.transform = function (toTransform, transformBy) {
+var simplify = Patch.simplify = function (patch, doc)
+{
     if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
+        check(patch);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
-    var out = clone(toTransform);
-    for (var i = out.operations.length-1; i >= 0; i--) {
-        for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            Operation.transform(out.operations[i], transformBy.operations[j]);
+    var spatch = create(patch.parentHash);
+    var newDoc = doc;
+    var outOps = [];
+    var j = 0;
+    for (var i = patch.operations.length-1; i >= 0; i--) {
+        outOps[j] = Operation.simplify(patch.operations[i], newDoc);
+        if (outOps[j]) {
+            newDoc = Operation.apply(outOps[j], newDoc);
+            j++;
         }
+    }
+    spatch.operations = outOps.reverse();
+    if (!spatch.operations[0]) {
+        spatch.operations.shift();
+    }
+    if (Common.PARANOIA) {
+        check(spatch);
+    }
+    return spatch;
+};
+
+var transform = Patch.transform = function (origToTransform, transformBy, doc) {
+    if (Common.PARANOIA) {
+        check(origToTransform, doc.length);
+        check(transformBy, doc.length);
+        Common.assert(Sha.hex_sha256(doc) === origToTransform.parentHash);
+    }
+    Common.assert(origToTransform.parentHash === transformBy.parentHash);
+    var resultOfTransformBy = apply(transformBy, doc);
+
+    toTransform = clone(origToTransform);
+    for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        for (var j = transformBy.operations.length-1; j >= 0; j--) {
+            toTransform.operations[i] =
+                Operation.transform(toTransform.operations[i], transformBy.operations[j]);
+            if (!toTransform.operations[i]) {
+                break;
+            }
+        }
+        if (Common.PARANOIA && toTransform.operations[i]) {
+try {
+            Operation.check(toTransform.operations[i], resultOfTransformBy.length);
+} catch (e) {
+console.log('transform('+JSON.stringify([origToTransform,transformBy,doc], null, '  ')+');');
+console.log(JSON.stringify(toTransform.operations[i]));
+throw e;
+}
+        }
+    }
+    var out = create(transformBy.parentHash);
+    for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        if (toTransform.operations[i]) {
+            addOperation(out, toTransform.operations[i]);
+        }
+    }
+
+    out.parentHash = Sha.hex_sha256(resultOfTransformBy);
+
+    if (Common.PARANOIA) {
+        check(out, resultOfTransformBy.length);
     }
     return out;
 }
 
-var random = Patch.random = function (docLength, opCount) {
+var random = Patch.random = function (doc, opCount) {
+    Common.assert(typeof(doc) === 'string');
     opCount = opCount || (Math.floor(Math.random() * 30) + 1);
-    var patch = create('0000000000000000000000000000000000000000000000000000000000000000');
+    var patch = create(Sha.hex_sha256(doc));
+    var docLength = doc.length;
     while (opCount-- > 0) {
         var op = Operation.random(docLength);
         docLength += Operation.lengthChange(op);
@@ -232,7 +488,7 @@ var isUint = Common.isUint = function (integer) {
 var randomASCII = Common.randomASCII = function (length) {
     var content = [];
     for (var i = 0; i < length; i++) {
-        content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 94 + 32 );
+        content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 57 + 65 );
     }
     return content.join('');
 };
@@ -469,14 +725,19 @@ var EMPTY_STR_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b78
 
 var enterRealtime = function (realtime, func) {
     return function () {
+        if (realtime.failed) { return; }
         try {
             func.apply(null, arguments);
         } catch (err) {
-            realtime.schedules.forEach(function (s) { clearTimeout(s) });
-            err.message += ' username [' + realtime.userName + ']';
+            realtime.failed = true;
+            err.message += ' (' + realtime.userName + ')';
             throw err;
         }
     };
+};
+
+var debug = function (realtime, msg) {
+    console.log("[" + realtime.userName + "]  " + msg);
 };
 
 var schedule = function (realtime, func) {
@@ -486,12 +747,19 @@ var schedule = function (realtime, func) {
         func();
     }), time);
     realtime.schedules.push(to);
+    return to;
 };
 
 var sync = function (realtime) {
-    schedule(realtime, function () { sync(realtime); });
+    if (realtime.syncSchedule) {
+        clearTimeout(realtime.syncSchedule);
+    }
+    realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
+
+    realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+
     if (realtime.uncommitted.operations.length === 0) {
-        //console.log("No data to sync to the server, sleeping");
+        //debug(realtime, "No data to sync to the server, sleeping");
         return;
     }
 
@@ -503,7 +771,7 @@ var sync = function (realtime) {
 
     realtime.onMessage(Message.toString(msg), function (err) {
         if (err) {
-            console.log("Posting to server failed [" + err + "]");
+            debug(realtime, "Posting to server failed [" + err + "]");
         }
     });
 };
@@ -518,7 +786,7 @@ var getMessages = function (realtime) {
                              '');
     realtime.onMessage(Message.toString(msg), function (err) {
         if (err) {
-            console.log("Requesting patches from server failed [" + err + "] try again");
+            debug(realtime, "Requesting patches from server failed [" + err + "] try again");
         }
     });
 };
@@ -555,13 +823,21 @@ var create = Realtime.create = function (userName, authToken, channelId, initial
 
         schedules: [],
 
+        syncSchedule: null,
+
         registered: false,
 
-        avgSyncTime: 200,
+        avgSyncTime: 10000,
 
         // this is only used if PARANOIA is enabled.
-        userInterfaceContent: ''
+        userInterfaceContent: undefined,
+
+        failed: false
     };
+
+    if (Common.PARANOIA) {
+        realtime.userInterfaceContent = initialState;
+    }
 
     if (initialState !== '') {
         var initialPatch = realtime.uncommitted;
@@ -582,8 +858,11 @@ var check = Realtime.check = function(realtime) {
     Common.assert(Array.isArray(realtime.rpatches));
 
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
+
     var uiDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
-    Common.assert(uiDoc.length === realtime.uncommittedDocLength);
+    if (uiDoc.length !== realtime.uncommittedDocLength) {
+        Common.assert(0);
+    }
     if (realtime.userInterfaceContent !== '') {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
@@ -601,61 +880,85 @@ var doOperation = Realtime.doOperation = function (realtime, op) {
         check(realtime);
         realtime.userInterfaceContent = Operation.apply(op, realtime.userInterfaceContent);
     }
-console.log("OPERATION");
     Operation.check(op, realtime.uncommittedDocLength);
     Patch.addOperation(realtime.uncommitted, op);
+debug(realtime, JSON.stringify(realtime.uncommitted));
     realtime.uncommittedDocLength += Operation.lengthChange(op);
 };
 
 var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
+    if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
     Common.assert(msg.channelId === realtime.channelId);
 
     if (msg.messageType === Message.REGISTER_ACK) {
-        console.log("registered");
+        debug(realtime, "registered");
         realtime.registered = true;
         return;
     }
-
+debug(realtime, "msg");
     Common.assert(msg.messageType === Message.PATCH);
 
     var patch = msg.content;
-    // TODO: We calculate the hash of the patch twice, once to invert it.
-    //var hash = Patch.hashOf(patch);
 
     // First we will search for the base of this patch.
     var rollbackPatch = null;
 
     var hashes = [];
-    var nextHash = realtime.uncommitted.parentHash;
-    for (var i = realtime.rpatches.length-1;;) {
-        if (patch.parentHash === nextHash) {
+
+    var i;
+    for (i = realtime.rpatches.length-1; i >= 0; i--) {
+        if (patch.parentHash === realtime.rpatches[i].parentHash) {
             // Found the point where it's rooted.
             break;
         }
-        nextHash = realtime.rpatches[i].parentHash;
         if (!rollbackPatch) {
+            Common.assert(realtime.rpatches[i].parentHash === realtime.uncommitted.parentHash);
             rollbackPatch = realtime.rpatches[i];
         } else {
             rollbackPatch = Patch.merge(rollbackPatch, realtime.rpatches[i]);
         }
-        hashes.push(nextHash);
-        i--;
-        if (i < 0) {
-            console.log("base [" + patch.parentHash + "] of patch not found");
-            return;
-        }
+        hashes.push(realtime.rpatches[i].parentHash);
+    }
+
+    if (rollbackPatch) {
+        debug(realtime, "Rejecting patch ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+        if (Common.PARANOIA) { check(realtime); }
+        return;
+    }
+
+    if (i < 0 && (realtime.rpatches.length !== 0 && patch.parentHash !== EMPTY_STR_HASH)) {
+        debug(realtime, "base of patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] not found");
+try{
+        //Common.assert(msg.userName !== realtime.userName);
+}catch(e){
+debug(realtime, JSON.stringify(realtime.rpatches, null, '    '));
+throw e;
+}
+        if (Common.PARANOIA) { check(realtime); }
+        return;
     }
 
     var authDocAtTimeOfPatch = realtime.authDoc;
     var patchToApply = patch;
     if (rollbackPatch !== null) {
-        authDocAtTimeOfPatch = Patch.apply(rollbackPatch, authDocAtTimeOfPatch);
         if (Common.PARANOIA) {
             Common.assert(Sha.hex_sha256(authDocAtTimeOfPatch) === rollbackPatch.parentHash);
         }
+try{
+        authDocAtTimeOfPatch = Patch.apply(rollbackPatch, authDocAtTimeOfPatch);
+}catch (e) {
+debug(realtime, JSON.stringify(rollbackPatch));
+debug(realtime, authDocAtTimeOfPatch);
+throw e;
+}
+        if (Common.PARANOIA) {
+            Common.assert(Sha.hex_sha256(authDocAtTimeOfPatch) === patch.parentHash);
+        }
         patchToApply = Patch.merge(rollbackPatch, patch);
     }
+
+
 
     var rpatch = Patch.invert(patch, authDocAtTimeOfPatch);
 
@@ -663,36 +966,70 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
     // of all results which it displaces
     for (var i = 0; i < hashes.length; i++) {
         if (Common.compareHashes(rpatch.parentHash, hashes[i]) > 0) {
-            console.log("patch [" + rpatch.parentHash + "] rejected");
+            debug(realtime, "patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] rejected");
+            if (Common.PARANOIA) { check(realtime); }
             return;
         }
     }
 
     // ok we're really going to do this
+
+    for (var i = 0; i < hashes.length; i++) {
+        debug(realtime, "reverting [" + hashes[i] + "]");
+        realtime.rpatches.pop();
+    }
+    debug(realtime, "applying ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+
     realtime.rpatches.push(rpatch);
-//console.log("newhash " + rpatch.parentHash);
-//console.log(realtime.authDoc);
+
+//debug(realtime, "newhash " + rpatch.parentHash);
+//debug(realtime, realtime.authDoc);
+
+    realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+
+    var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
+
+    if (Common.PARANOIA) {
+        Common.assert(userInterfaceContent === realtime.userInterfaceContent);
+    }
+
     var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
+
+    var oldAuthDoc = realtime.authDoc;
 
     // apply the patch to the authoritative document
     realtime.authDoc = Patch.apply(patchToApply, realtime.authDoc);
 
-    if (msg.userName === realtime.userName) {
-        // We should not be forcing ourselves to roll anything back.
-        Common.assert(patchToApply === patch);
-        Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
-
-//console.log(JSON.stringify(inverseOldUncommitted) + 'xxx' + JSON.stringify(patch));
-        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patch);
-        realtime.uncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
-        Common.assert(realtime.uncommitted.parentHash === rpatch.parentHash);
-//console.log(JSON.stringify(realtime.uncommitted));
-        return;
-    }
 
     // transform the uncommitted work
-    realtime.uncommitted = Patch.transform(realtime.uncommitted, patchToApply);
+    realtime.uncommitted = Patch.transform(realtime.uncommitted, patchToApply, oldAuthDoc);
     realtime.uncommitted.parentHash = rpatch.parentHash;
+
+    if (msg.userName === realtime.userName) {
+        // We should not be forcing ourselves to roll anything back.
+        // Wrong, we pushed our patch then received a patch from someone else re-rooting us,
+        // then we received our own patch which switches us back.
+        //Common.assert(patchToApply === patch);
+        //Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
+
+//debug(realtime, JSON.stringify(inverseOldUncommitted) + 'xxx' + JSON.stringify(patch));
+        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patchToApply);
+        realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
+
+        realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+
+        //realtime.uncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
+        //realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
+
+//debug(realtime, JSON.stringify(realtime.uncommitted));
+
+        if (patchToApply === patch) {
+            Common.assert(realtime.uncommitted.parentHash === rpatch.parentHash);
+            if (Common.PARANOIA) { check(realtime); }
+            return;
+        }
+//debug(realtime, JSON.stringify(realtime.uncommitted));
+    }
 
     // Derive the patch for the user's uncommitted work
     var uncommittedPatch = Patch.merge(inverseOldUncommitted, patchToApply);
@@ -706,7 +1043,7 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
         realtime.userInterfaceContent =
             Patch.apply(uncommittedPatch, realtime.userInterfaceContent);
         Common.assert(realtime.userInterfaceContent.length === realtime.uncommittedDocLength);
-        console.log(">"+realtime.userInterfaceContent);
+        debug(realtime, ">"+realtime.userInterfaceContent);
     }
 
     // push the uncommittedPatch out to the user interface.
@@ -715,6 +1052,7 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
             realtime.opHandlers[j](uncommittedPatch.operations[i]);
         }
     }
+    if (Common.PARANOIA) { check(realtime); }
 };
 
 module.exports.create = function (userName, authToken, channelId, initialState) {
@@ -761,9 +1099,8 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
         abort: enterRealtime(realtime, function () {
             realtime.schedules.forEach(function (s) { clearTimeout(s) });
         }),
-        setAvgSyncTime: enterRealtime(realtime, function (time) {
-            Common.assert(typeof(time) === 'number' && time >= 0);
-            realtime.avgSyncTime = time;
+        sync: enterRealtime(realtime, function () {
+            sync(realtime);
         })
     };
 };
@@ -854,6 +1191,33 @@ var invert = Operation.invert = function (op, doc) {
     return rop;
 };
 
+var simplify = Operation.simplify = function (op, doc) {
+    if (Common.PARANOIA) {
+        check(op);
+        Common.assert(typeof(doc) === 'string');
+        Common.assert(op.offset + op.toDelete <= doc.length);
+    }
+    var rop = invert(op, doc);
+    op = clone(op);
+
+    var minLen = Math.min(op.toInsert.length, rop.toInsert.length);
+    var i;
+    for (i = 0; i < minLen && rop.toInsert[i] === op.toInsert[i]; i++) ;
+    op.offset += i;
+    op.toDelete -= i;
+    op.toInsert = op.toInsert.substring(i);
+    rop.toInsert = rop.toInsert.substring(i);
+
+    if (rop.toInsert.length === op.toInsert.length) {
+        for (i = rop.toInsert.length-1; i >= 0 && rop.toInsert[i] === op.toInsert[i]; i--) ;
+        op.toInsert = op.toInsert.substring(0, i+1);
+        op.toDelete = i+1;
+    }
+
+    if (op.toDelete === 0 && op.toInsert.length === 0) { return null; }
+    return op;
+};
+
 var lengthChange = Operation.lengthChange = function (op)
 {
     if (Common.PARANOIA) { check(op); }
@@ -867,10 +1231,6 @@ var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
     if (Common.PARANOIA) {
         check(newOpOrig);
         check(oldOpOrig);
-    }
-
-    if (JSON.stringify(oldOpOrig) === JSON.stringify(newOpOrig)) {
-        return null;
     }
 
     var newOp = clone(newOpOrig);
@@ -968,26 +1328,32 @@ var transform = Operation.transform = function (toTransform, transformBy) {
         check(transformBy);
     }
     if (toTransform.offset > transformBy.offset) {
-        //toTransform = clone(toTransform);
+        toTransform = clone(toTransform);
         if (toTransform.offset > transformBy.offset + transformBy.toDelete) {
             // simple rebase
             toTransform.offset -= transformBy.toDelete;
             toTransform.offset += transformBy.toInsert.length;
-            return;// toTransform;
+            return toTransform;
         }
         // goto the end, anything you deleted that they also deleted should be skipped.
-        var newOffset = transformBy.offset + transformBy.toDelete + 1;
-        toTransform.toDelete -= (newOffset - toTrandform.offset);
+        var newOffset = transformBy.offset + transformBy.toInsert.length;
+        toTransform.toDelete = 0; //-= (newOffset - toTransform.offset);
         if (toTransform.toDelete < 0) { toTransform.toDelete = 0; }
         toTransform.offset = newOffset;
-        return;// toTransform;
+        if (toTransform.toInsert.length === 0 && toTransform.toDelete === 0) {
+            return null;
+        }
+        return toTransform;
     }
     if (toTransform.offset + toTransform.toDelete < transformBy.offset) {
-        return;// toTransform;
+        return toTransform;
     }
-    //toTransform = clone(toTransform);
+    toTransform = clone(toTransform);
     toTransform.toDelete = transformBy.offset - toTransform.offset;
-    return;// toTransform;
+    if (toTransform.toInsert.length === 0 && toTransform.toDelete === 0) {
+        return null;
+    }
+    return toTransform;
 };
 
 /** Used for testing. */
