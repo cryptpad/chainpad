@@ -129,11 +129,10 @@ console.log(msg);
             var j = 0;
             var again = function () {
                 if (++j > 1000) { throw new Error("never synced"); }
-                process.nextTick(again);
                 var m = messages;
                 rtA.sync();
                 rtB.sync();
-                if (m === messages) {
+                if (m === messages && rtA.queue.length === 0 && rtB.queue.length === 0) {
                     console.log(rtA.doc);
                     console.log(rtB.doc);
                     Common.assert(rtA.doc === rtB.doc);
@@ -141,6 +140,8 @@ console.log(msg);
                     rtB.abort();
                     callback();
                     return;
+                } else {
+                    process.nextTick(again);
                 }
             };
             again();
@@ -167,9 +168,9 @@ console.log(msg);
 
 };
 
-var twoClents = function () {
+var twoClients = function () {
     var i = 0;
-    var again = function () { if (i++ < 10) { twoClientsCycle(again); } };
+    var again = function () { if (i++ < 1000) { twoClientsCycle(again); } };
     again();
 };
 
@@ -177,6 +178,6 @@ var main = function () {
     //startup();
     onMessage();
     editing();
-    twoClents();
+    twoClients();
 };
 main();

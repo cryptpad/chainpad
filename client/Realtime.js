@@ -41,26 +41,36 @@ var debug = function (realtime, msg) {
     console.log("[" + realtime.userName + "]  " + msg);
 };
 
-var schedule = function (realtime, func) {
-    var time = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
+var schedule = function (realtime, func, timeout) {
+    if (!timeout) {
+        timeout = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
+    }
     var to = setTimeout(enterRealtime(realtime, function () {
         realtime.schedules.splice(realtime.schedules.indexOf(to), 1);
         func();
-    }), time);
+    }), timeout);
     realtime.schedules.push(to);
     return to;
 };
 
+var unschedule = function (realtime, schedule) {
+    var index = realtime.schedules.indexOf(schedule);
+    Common.assert(index > -1);
+    realtime.schedules.splice(index, 1);
+    clearTimeout(schedule);
+};
+
 var sync = function (realtime) {
     if (realtime.syncSchedule) {
-        clearTimeout(realtime.syncSchedule);
+clearTimeout(realtime.syncSchedule);
+        //unschedule(realtime, realtime.syncSchedule);
     }
-    realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
 
     realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
 
     if (realtime.uncommitted.operations.length === 0) {
         //debug(realtime, "No data to sync to the server, sleeping");
+        realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         return;
     }
 
@@ -70,11 +80,24 @@ var sync = function (realtime) {
                              Message.PATCH,
                              realtime.uncommitted);
 
-    realtime.onMessage(Message.toString(msg), function (err) {
+    var strMsg = Message.toString(msg);
+
+    debug(realtime, "Sending patch [" + Message.hashOf(msg) + "]");
+
+    realtime.onMessage(strMsg, function (err) {
         if (err) {
             debug(realtime, "Posting to server failed [" + err + "]");
         }
+        //clearTimeout(realtime.syncSchedule);
+
     });
+        realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
+/*
+    realtime.syncSchedule = schedule(realtime, function () {
+        debug(realtime, "Failed to send message to server");
+        sync(realtime);
+    }, 1000 + (Math.random() * 5000));
+*/
 };
 
 var getMessages = function (realtime) {
@@ -223,13 +246,13 @@ debug(realtime, "msg");
     }
 
     if (rollbackPatch) {
-        debug(realtime, "Rejecting patch ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+        debug(realtime, "Rejecting patch ["+Message.hashOf(msg)+"]");
         if (Common.PARANOIA) { check(realtime); }
         return;
     }
 
     if (i < 0 && (realtime.rpatches.length !== 0 && patch.parentHash !== EMPTY_STR_HASH)) {
-        debug(realtime, "base of patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] not found");
+        debug(realtime, "base of patch ["+Message.hashOf(msg)+"] not found");
 try{
         //Common.assert(msg.userName !== realtime.userName);
 }catch(e){
@@ -267,7 +290,7 @@ throw e;
     // of all results which it displaces
     for (var i = 0; i < hashes.length; i++) {
         if (Common.compareHashes(rpatch.parentHash, hashes[i]) > 0) {
-            debug(realtime, "patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] rejected");
+            debug(realtime, "patch ["+Message.hashOf(msg)+"] rejected");
             if (Common.PARANOIA) { check(realtime); }
             return;
         }
@@ -279,7 +302,7 @@ throw e;
         debug(realtime, "reverting [" + hashes[i] + "]");
         realtime.rpatches.pop();
     }
-    debug(realtime, "applying ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+    debug(realtime, "applying ["+Message.hashOf(msg)+"]");
 
     realtime.rpatches.push(rpatch);
 

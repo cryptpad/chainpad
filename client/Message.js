@@ -16,6 +16,7 @@
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
+var Sha = require('./SHA256');
 
 var Message = module.exports;
 
@@ -94,3 +95,13 @@ var fromString = Message.fromString = function (str) {
 
     return message
 };
+
+var hashOf = Message.hashOf = function (msg) {
+    if (Common.PARANOIA) { check(msg); }
+    var authToken = msg.authToken;
+    msg.authToken = '';
+    var hash = Sha.hex_sha256(toString(msg));
+    msg.authToken = authToken;
+    return hash;
+};
+

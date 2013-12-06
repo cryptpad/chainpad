@@ -1,203 +1,6 @@
 (function(){function require(e,t,n){t||(t=0);var r=require.resolve(e,t),i=require.m[t][r];if(!i)throw new Error('failed to require "'+e+'" from '+n);if(i.c){t=i.c,r=i.m,i=require.m[t][i.m];if(!i)throw new Error('failed to require "'+r+'" from '+t)}return i.exports||(i.exports={},i.call(i.exports,i,i.exports,require.relative(r,t))),i.exports}require.resolve=function(e,t){var n=e,r=e+".js",i=e+"/index.js";return require.m[t][r]&&r?r:require.m[t][i]&&i?i:n},require.relative=function(e,t){return function(n){if("."!=n.charAt(0))return require(n,t,e);var r=e.split("/"),i=n.split("/");r.pop();for(var s=0;s<i.length;s++){var o=i[s];".."==o?r.pop():"."!=o&&r.push(o)}return require(r.join("/"),t,e)}};
 require.m = [];
 require.m[0] = {
-"Fork.js": function(module, exports, require){
-/* vim: set expandtab ts=4 sw=4: */
-/*
- * You may redistribute this program and/or modify it under the terms of
- * the GNU Lesser General Public License as published by the Free Software
- * Foundation, either version 2.1 of the License, or (at your option) any
- * later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU Lesser General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-var Common = require('./Common');
-var Patch = require('./Patch');
-
-var Fork = module.exports;
-
-var create = Patch.create = function (parent) {
-    return {
-        type: 'Fork',
-        parent: parent,
-        
-    };
-};
-
-var check = Patch.check = function (patch, docLength_opt) {
-    Common.assert(patch.type === 'Patch');
-    Common.assert(Array.isArray(patch.operations));
-    Common.assert(/^[0-9a-f]{64}$/.test(patch.parentHash));
-    for (var i = patch.operations.length - 1; i >= 0; i--) {
-        Operation.check(patch.operations[i], docLength_opt);
-        if (i > 0) {
-            Common.assert(!Operation.shouldMerge(patch.operations[i], patch.operations[i-1]));
-        }
-        if (typeof(docLength_opt) === 'number') {
-            docLength_opt += Operation.lengthChange(patch.operations[i]);
-        }
-    }
-};
-
-var toObj = Patch.toObj = function (patch) {
-    if (Common.PARANOIA) { check(patch); }
-    var out = new Array(patch.operations.length+1);
-    var i;
-    for (i = 0; i < patch.operations.length; i++) {
-        out[i] = Operation.toObj(patch.operations[i]);
-    }
-    out[i] = patch.parentHash;
-    return out;
-};
-
-var fromObj = Patch.fromObj = function (obj) {
-    Common.assert(Array.isArray(obj) && obj.length > 0);
-    var patch = create();
-    var i;
-    for (i = 0; i < obj.length-1; i++) {
-        patch.operations[i] = Operation.fromObj(obj[i]);
-    }
-    patch.parentHash = obj[i];
-    if (Common.PARANOIA) { check(patch); }
-    return patch;
-};
-
-var hash = function (text) {
-    return Sha.hex_sha256(text);
-};
-
-var addOperation = Patch.addOperation = function (patch, op) {
-    if (Common.PARANOIA) {
-        check(patch);
-        Operation.check(op);
-    }
-    for (var i = 0; i < patch.operations.length; i++) {
-        if (Operation.shouldMerge(patch.operations[i], op)) {
-            op = Operation.merge(patch.operations[i], op);
-            patch.operations.splice(i,1);
-            if (op === null) {
-                //console.log("operations cancelled eachother");
-                return;
-            }
-            i--;
-        } else {
-            var out = Operation.rebase(patch.operations[i], op);
-            if (out === op) {
-                // op could not be rebased further, insert it here to keep the list ordered.
-                patch.operations.splice(i,0,op);
-                return;
-            } else {
-                op = out;
-                // op was rebased, try rebasing it against the next operation.
-            }
-        }
-    }
-    patch.operations.push(op);
-    if (Common.PARANOIA) { check(patch); }
-};
-
-var clone = Patch.clone = function (patch) {
-    if (Common.PARANOIA) { check(patch); }
-    var out = create();
-    out.parentHash = patch.parentHash;
-    for (var i = 0; i < patch.operations.length; i++) {
-        out.operations[i] = Operation.clone(patch.operations[i]);
-    }
-    return out;
-};
-
-var merge = Patch.merge = function (oldPatch, newPatch) {
-    if (Common.PARANOIA) {
-        check(oldPatch);
-        check(newPatch);
-    }
-    oldPatch = clone(oldPatch);
-    for (var i = newPatch.operations.length-1; i >= 0; i--) {
-        addOperation(oldPatch, newPatch.operations[i]);
-    }
-    return oldPatch;
-};
-
-var apply = Patch.apply = function (patch, doc)
-{
-    if (Common.PARANOIA) {
-        check(patch);
-        Common.assert(typeof(doc) === 'string');
-        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
-    }
-    var newDoc = doc;
-    for (var i = patch.operations.length-1; i >= 0; i--) {
-        newDoc = Operation.apply(patch.operations[i], newDoc);
-    }
-    return newDoc;
-};
-
-var lengthChange = Patch.lengthChange = function (patch)
-{
-    if (Common.PARANOIA) { check(patch); }
-    var out = 0;
-    for (var i = 0; i < patch.operations.length; i++) {
-        out += Operation.lengthChange(patch.operations[i]);
-    }
-    return out;
-};
-
-var invert = Patch.invert = function (patch, doc)
-{
-    if (Common.PARANOIA) {
-        check(patch);
-        Common.assert(typeof(doc) === 'string');
-        Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
-    }
-    var rpatch = create();
-    var newDoc = doc;
-    for (var i = patch.operations.length-1; i >= 0; i--) {
-        rpatch.operations[i] = Operation.invert(patch.operations[i], newDoc);
-        newDoc = Operation.apply(patch.operations[i], newDoc);
-    }
-    for (var i = rpatch.operations.length-1; i >= 0; i--) {
-        for (var j = i - 1; j >= 0; j--) {
-            rpatch.operations[i].offset += rpatch.operations[j].toDelete;
-            rpatch.operations[i].offset -= rpatch.operations[j].toInsert.length;
-        }
-    }
-    rpatch.parentHash = Sha.hex_sha256(newDoc);
-    if (Common.PARANOIA) { check(rpatch); }
-    return rpatch;
-};
-
-var transform = Patch.transform = function (toTransform, transformBy) {
-    if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
-    }
-    var out = clone(toTransform);
-    for (var i = out.operations.length-1; i >= 0; i--) {
-        for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            Operation.transform(out.operations[i], transformBy.operations[j]);
-        }
-    }
-    return out;
-}
-
-var random = Patch.random = function (docLength, opCount) {
-    opCount = opCount || (Math.floor(Math.random() * 30) + 1);
-    var patch = create('0000000000000000000000000000000000000000000000000000000000000000');
-    while (opCount-- > 0) {
-        var op = Operation.random(docLength);
-        docLength += Operation.lengthChange(op);
-        addOperation(patch, op);
-    }
-    check(patch);
-    return patch;
-};
-},
 "Patch.js": function(module, exports, require){
 /* vim: set expandtab ts=4 sw=4: */
 /*
@@ -617,6 +420,7 @@ var compareHashes = Common.compareHashes = function (hashA, hashB) {
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
+var Sha = require('./SHA256');
 
 var Message = module.exports;
 
@@ -695,6 +499,16 @@ var fromString = Message.fromString = function (str) {
 
     return message
 };
+
+var hashOf = Message.hashOf = function (msg) {
+    if (Common.PARANOIA) { check(msg); }
+    var authToken = msg.authToken;
+    msg.authToken = '';
+    var hash = Sha.hex_sha256(toString(msg));
+    msg.authToken = authToken;
+    return hash;
+};
+
 },
 "Realtime.js": function(module, exports, require){
 /* vim: set expandtab ts=4 sw=4: */
@@ -740,26 +554,36 @@ var debug = function (realtime, msg) {
     console.log("[" + realtime.userName + "]  " + msg);
 };
 
-var schedule = function (realtime, func) {
-    var time = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
+var schedule = function (realtime, func, timeout) {
+    if (!timeout) {
+        timeout = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
+    }
     var to = setTimeout(enterRealtime(realtime, function () {
         realtime.schedules.splice(realtime.schedules.indexOf(to), 1);
         func();
-    }), time);
+    }), timeout);
     realtime.schedules.push(to);
     return to;
 };
 
+var unschedule = function (realtime, schedule) {
+    var index = realtime.schedules.indexOf(schedule);
+    Common.assert(index > -1);
+    realtime.schedules.splice(index, 1);
+    clearTimeout(schedule);
+};
+
 var sync = function (realtime) {
     if (realtime.syncSchedule) {
-        clearTimeout(realtime.syncSchedule);
+clearTimeout(realtime.syncSchedule);
+        //unschedule(realtime, realtime.syncSchedule);
     }
-    realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
 
     realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
 
     if (realtime.uncommitted.operations.length === 0) {
         //debug(realtime, "No data to sync to the server, sleeping");
+        realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         return;
     }
 
@@ -769,11 +593,24 @@ var sync = function (realtime) {
                              Message.PATCH,
                              realtime.uncommitted);
 
-    realtime.onMessage(Message.toString(msg), function (err) {
+    var strMsg = Message.toString(msg);
+
+    debug(realtime, "Sending patch [" + Message.hashOf(msg) + "]");
+
+    realtime.onMessage(strMsg, function (err) {
         if (err) {
             debug(realtime, "Posting to server failed [" + err + "]");
         }
+        //clearTimeout(realtime.syncSchedule);
+
     });
+        realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
+/*
+    realtime.syncSchedule = schedule(realtime, function () {
+        debug(realtime, "Failed to send message to server");
+        sync(realtime);
+    }, 1000 + (Math.random() * 5000));
+*/
 };
 
 var getMessages = function (realtime) {
@@ -922,13 +759,13 @@ debug(realtime, "msg");
     }
 
     if (rollbackPatch) {
-        debug(realtime, "Rejecting patch ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+        debug(realtime, "Rejecting patch ["+Message.hashOf(msg)+"]");
         if (Common.PARANOIA) { check(realtime); }
         return;
     }
 
     if (i < 0 && (realtime.rpatches.length !== 0 && patch.parentHash !== EMPTY_STR_HASH)) {
-        debug(realtime, "base of patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] not found");
+        debug(realtime, "base of patch ["+Message.hashOf(msg)+"] not found");
 try{
         //Common.assert(msg.userName !== realtime.userName);
 }catch(e){
@@ -966,7 +803,7 @@ throw e;
     // of all results which it displaces
     for (var i = 0; i < hashes.length; i++) {
         if (Common.compareHashes(rpatch.parentHash, hashes[i]) > 0) {
-            debug(realtime, "patch ["+Sha.hex_sha256(JSON.stringify(patch))+"] rejected");
+            debug(realtime, "patch ["+Message.hashOf(msg)+"] rejected");
             if (Common.PARANOIA) { check(realtime); }
             return;
         }
@@ -978,7 +815,7 @@ throw e;
         debug(realtime, "reverting [" + hashes[i] + "]");
         realtime.rpatches.pop();
     }
-    debug(realtime, "applying ["+Sha.hex_sha256(JSON.stringify(patch))+"]");
+    debug(realtime, "applying ["+Message.hashOf(msg)+"]");
 
     realtime.rpatches.push(rpatch);
 
