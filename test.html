@@ -15,18 +15,22 @@
  -->
 <head></head>
 <body></body>
-<script src="http://code.jquery.com/jquery-1.10.1.min.js"></script>
-<script src="http://127.0.0.1:8081/realtime-mockup/realtime-min.js"></script>
-<script src="http://127.0.0.1:8081/realtime-mockup/sharejs_textarea.js"></script>
+<script src="/jquery.js"></script>
+<script src="/realtime-min.js"></script>
+<script src="/sharejs_textarea.js"></script>
 <script>
+
+var schedule = function (func) {
+    setTimeout(func, /*2 * latency for each node */Math.random() * $('#latency').val());
+};
 
 var mkRealtime = function (user, pass, channel, element) {
     var socket = new WebSocket("ws://127.0.0.1:8080/");
     socket.onopen = function(evt) {
         var initState = $(element).val();
         var realtime = Realtime.create(user, pass, channel, initState);
-        socket.onmessage = function (evt) { realtime.message(evt.data); };
-        realtime.onMessage(function (message) { socket.send(message) });
+        socket.onmessage = function (evt) { schedule(function () { realtime.message(evt.data); }); };
+        realtime.onMessage(function (message) { schedule(function () { socket.send(message); }); });
 
         attachTextarea($(element)[0], realtime, initState);
         realtime.start();
@@ -35,12 +39,27 @@ var mkRealtime = function (user, pass, channel, element) {
     socket.onerror = function(evt) { console.log("socket error");  };
 };
 
+var init = function (element) {
+    $.ajax({
+        url: '/getToken?cb='+Math.random(),
+        success: function (resp) {
+            var token = JSON.parse(resp.substring(1));
+            mkRealtime(token.user, token.pass, 'abc', element);
+        },
+        failure: function (err) { throw err; }
+    });
+};
+
 $(function () {
-    mkRealtime('user', 'pass', 'abc', $('#abc'));
-    mkRealtime('user2', 'pass2', 'abc', $('#def'));
+    init($('#abc'));
+    init($('#def'));
 });
 
 </script>
 <textarea id="abc" cols="60" rows="10"></textarea>
+<dl>
+  <dt><label for="latency">Average simulated latency</label></dt>
+  <dd><input id="latency" value="100"></input></dd>
+</dl>
 <textarea id="def" cols="60" rows="10"></textarea>
 </html>

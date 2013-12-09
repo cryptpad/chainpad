@@ -110,6 +110,12 @@ var simplify = Operation.simplify = function (op, doc) {
     return op;
 };
 
+var equals = Operation.equals = function (opA, opB) {
+    return (opA.toDelete === opB.toDelete
+        && opA.toInsert === opB.toInsert
+        && opA.offset === opB.offset);
+};
+
 var lengthChange = Operation.lengthChange = function (op)
 {
     if (Common.PARANOIA) { check(op); }

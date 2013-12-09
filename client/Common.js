@@ -15,7 +15,10 @@
  */
 var Common = module.exports;
 
-Common.PARANOIA = true;
+Common.PARANOIA = false;
+
+/* throw errors over non-compliant messages which would otherwise be treated as invalid */
+Common.TESTING = true;
 
 var assert = Common.assert = function (expr) {
     if (!expr) { throw new Error("Failed assertion"); }

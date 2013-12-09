@@ -55,15 +55,20 @@ var schedule = function (realtime, func, timeout) {
 
 var unschedule = function (realtime, schedule) {
     var index = realtime.schedules.indexOf(schedule);
-    Common.assert(index > -1);
-    realtime.schedules.splice(index, 1);
+    if (index > -1) {
+        realtime.schedules.splice(index, 1);
+    }
     clearTimeout(schedule);
 };
 
 var sync = function (realtime) {
+    if (Common.PARANOIA) { check(realtime); }
     if (realtime.syncSchedule) {
-clearTimeout(realtime.syncSchedule);
-        //unschedule(realtime, realtime.syncSchedule);
+        unschedule(realtime, realtime.syncSchedule);
+        realtime.syncSchedule = null;
+    } else {
+        // we're currently waiting on something from the server.
+        return;
     }
 
     realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
@@ -78,40 +83,45 @@ clearTimeout(realtime.syncSchedule);
                              realtime.authToken,
                              realtime.channelId,
                              Message.PATCH,
-                             realtime.uncommitted);
+                             realtime.uncommitted,
+                             realtime.best.hashOf);
 
     var strMsg = Message.toString(msg);
-
-    debug(realtime, "Sending patch [" + Message.hashOf(msg) + "]");
 
     realtime.onMessage(strMsg, function (err) {
         if (err) {
             debug(realtime, "Posting to server failed [" + err + "]");
         }
-        //clearTimeout(realtime.syncSchedule);
-
     });
-        realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
-/*
-    realtime.syncSchedule = schedule(realtime, function () {
-        debug(realtime, "Failed to send message to server");
+
+    var hash = Message.hashOf(msg);
+
+    var timeout = schedule(realtime, function () {
+        debug(realtime, "Failed to send message ["+hash+"] to server");
         sync(realtime);
-    }, 1000 + (Math.random() * 5000));
-*/
+    }, 10000 + (Math.random() * 5000));
+    realtime.pending = {
+        hash: hash,
+        callback: function () {
+            unschedule(realtime, timeout);
+            realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
+        }
+    };
+    if (Common.PARANOIA) { check(realtime); }
 };
 
 var getMessages = function (realtime) {
     if (realtime.registered === true) { return; }
-    schedule(realtime, function () { getMessages(realtime); });
+    realtime.registered = true;
+    /*var to = schedule(realtime, function () {
+        throw new Error("failed to connect to the server");
+    }, 5000);*/
     var msg = Message.create(realtime.userName,
                              realtime.authToken,
                              realtime.channelId,
-                             Message.REGISTER,
-                             '');
+                             Message.REGISTER);
     realtime.onMessage(Message.toString(msg), function (err) {
-        if (err) {
-            debug(realtime, "Requesting patches from server failed [" + err + "] try again");
-        }
+        if (err) { throw err; }
     });
 };
 
@@ -123,19 +133,11 @@ var create = Realtime.create = function (userName, authToken, channelId, initial
         authDoc: '',
 
         userName: userName,
-
         authToken: authToken,
-
         channelId: channelId,
 
-        /**
-         * The reverse patches which if each are applied will carry the document back to
-         * it's initial state, if the final patch is applied it will convert the document to ''
-         */
-        rpatches: [],
-
         /** A patch representing all uncommitted work. */
-        uncommitted: Patch.create(EMPTY_STR_HASH),
+        uncommitted: null,
 
         uncommittedDocLength: initialState.length,
 
@@ -151,35 +153,53 @@ var create = Realtime.create = function (userName, authToken, channelId, initial
 
         registered: false,
 
-        avgSyncTime: 10000,
+        avgSyncTime: 100,
 
         // this is only used if PARANOIA is enabled.
         userInterfaceContent: undefined,
 
-        failed: false
+        failed: false,
+
+        // hash and callback for previously send patch, currently in flight.
+        pending: null,
+
+        messages: {},
+        messagesByParent: {},
+
+        rootMessage: null
     };
 
     if (Common.PARANOIA) {
         realtime.userInterfaceContent = initialState;
     }
 
+    var initialPatch = Patch.create(EMPTY_STR_HASH);
     if (initialState !== '') {
-        var initialPatch = realtime.uncommitted;
         var initialOp = Operation.create();
         initialOp.toInsert = initialState;
         Patch.addOperation(initialPatch, initialOp);
         realtime.authDoc = Patch.apply(initialPatch, '');
-        realtime.rpatches.push(Patch.invert(initialPatch, ''));
-        realtime.uncommitted = Patch.create(realtime.rpatches[0].parentHash);
     }
+    initialPatch.inverseOf = Patch.invert(initialPatch, '');
+    var msg = Message.create('', '', channelId, Message.PATCH, initialPatch, '');
+    msg.lastMsgHash = '0000000000000000000000000000000000000000000000000000000000000000';
+    msg.hashOf = Message.hashOf(msg);
+    msg.parentCount = 0;
+    realtime.messages[msg.hashOf] = msg;
+    realtime.rootMessage = msg;
+    realtime.best = msg;
+    realtime.uncommitted = Patch.create(initialPatch.inverseOf.parentHash);
 
     return realtime;
+};
+
+var getParent = function (realtime, message) {
+    return message.parent = message.parent || realtime.messages[message.lastMsgHash];
 };
 
 var check = Realtime.check = function(realtime) {
     Common.assert(realtime.type === 'Realtime');
     Common.assert(typeof(realtime.authDoc) === 'string');
-    Common.assert(Array.isArray(realtime.rpatches));
 
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
 
@@ -192,11 +212,18 @@ var check = Realtime.check = function(realtime) {
     }
 
     var doc = realtime.authDoc;
-    for (var i = realtime.rpatches.length-1; i >= 0; i--) {
-        Patch.check(realtime.rpatches[i], doc.length);
-        doc = Patch.apply(realtime.rpatches[i], doc);
-    }
+    var patchMsg = realtime.best;
+    Common.assert(patchMsg.content.inverseOf.parentHash === realtime.uncommitted.parentHash);
+    var patches = [];
+    do {
+        patches.push(patchMsg);
+        doc = Patch.apply(patchMsg.content.inverseOf, doc);
+    } while ((patchMsg = getParent(realtime, patchMsg)));
     Common.assert(doc === '');
+    while ((patchMsg = patches.pop())) {
+        doc = Patch.apply(patchMsg.content, doc);
+    }
+    Common.assert(doc === realtime.authDoc);
 };
 
 var doOperation = Realtime.doOperation = function (realtime, op) {
@@ -206,11 +233,60 @@ var doOperation = Realtime.doOperation = function (realtime, op) {
     }
     Operation.check(op, realtime.uncommittedDocLength);
     Patch.addOperation(realtime.uncommitted, op);
-debug(realtime, JSON.stringify(realtime.uncommitted));
     realtime.uncommittedDocLength += Operation.lengthChange(op);
 };
 
+var isAncestorOf = function (realtime, ancestor, decendent) {
+    if (!decendent || !ancestor) { return false; }
+    if (ancestor === decendent) { return true; }
+    return isAncestorOf(realtime, ancestor, getParent(realtime, decendent));
+};
+
+var parentCount = function (realtime, message) {
+    if (typeof(message.parentCount) !== 'number') {
+        message.parentCount = parentCount(realtime, getParent(realtime, message)) + 1;
+    }
+    return message.parentCount;
+};
+
+var applyPatch = function (realtime, author, patch) {
+    if (author === realtime.userName) {
+        var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
+        var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
+        if (Common.PARANOIA) {
+            Common.assert(userInterfaceContent === realtime.userInterfaceContent);
+        }
+        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patch);
+        realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
+
+    } else {
+        realtime.uncommitted = Patch.transform(realtime.uncommitted, patch, realtime.authDoc);
+    }
+    realtime.uncommitted.parentHash = patch.inverseOf.parentHash;
+
+    realtime.authDoc = Patch.apply(patch, realtime.authDoc);
+
+    if (Common.PARANOIA) {
+        realtime.userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
+    }
+};
+
+var revertPatch = function (realtime, author, patch) {
+    applyPatch(realtime, author, patch.inverseOf);
+};
+
+var getBestChild = function (realtime, msg) {
+    var best = msg;
+    (realtime.messagesByParent[msg.hashOf] || []).forEach(function (child) {
+        Common.assert(child.lastMsgHash === msg.hashOf);
+        child = getBestChild(realtime, child);
+        if (parentCount(realtime, child) > parentCount(realtime, best)) { best = child; }
+    });
+    return best;
+};
+
 var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
+
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
     Common.assert(msg.channelId === realtime.channelId);
@@ -220,154 +296,132 @@ var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
         realtime.registered = true;
         return;
     }
-debug(realtime, "msg");
+
     Common.assert(msg.messageType === Message.PATCH);
 
+    msg.hashOf = Message.hashOf(msg);
+
+    if (realtime.pending && realtime.pending.hash === msg.hashOf) {
+        realtime.pending.callback();
+        realtime.pending = null;
+    }
+
+    realtime.messages[msg.hashOf] = msg;
+    (realtime.messagesByParent[msg.lastMsgHash] =
+        realtime.messagesByParent[msg.lastMsgHash] || []).push(msg);
+
+    if (!isAncestorOf(realtime, realtime.rootMessage, msg)) {
+        // we'll probably find the missing parent later.
+        debug(realtime, "Patch [" + msg.hashOf + "] not connected to root");
+        if (Common.PARANOIA) { check(realtime); }
+        return;
+    }
+
+    // of this message fills in a hole in the chain which makes another patch better, swap to the
+    // best child of this patch since longest chain always wins.
+    msg = getBestChild(realtime, msg);
     var patch = msg.content;
 
-    // First we will search for the base of this patch.
-    var rollbackPatch = null;
-
-    var hashes = [];
-
-    var i;
-    for (i = realtime.rpatches.length-1; i >= 0; i--) {
-        if (patch.parentHash === realtime.rpatches[i].parentHash) {
-            // Found the point where it's rooted.
-            break;
-        }
-        if (!rollbackPatch) {
-            Common.assert(realtime.rpatches[i].parentHash === realtime.uncommitted.parentHash);
-            rollbackPatch = realtime.rpatches[i];
+    // Find the ancestor of this patch which is in the main chain, reverting as necessary
+    var toRevert = [];
+    var commonAncestor = realtime.best;
+    if (!isAncestorOf(realtime, realtime.best, msg)) {
+        var pcBest = parentCount(realtime, realtime.best);
+        var pcMsg = parentCount(realtime, msg);
+        if (pcBest < pcMsg
+          || (pcBest === pcMsg
+            && Common.compareHashes(realtime.best.hashOf, msg.hashOf) > 0))
+        {
+            // switch chains
+            while (commonAncestor && !isAncestorOf(realtime, commonAncestor, msg)) {
+                toRevert.push(commonAncestor);
+                commonAncestor = getParent(realtime, commonAncestor);
+            }
+            Common.assert(commonAncestor);
         } else {
-            rollbackPatch = Patch.merge(rollbackPatch, realtime.rpatches[i]);
+            debug(realtime, "Patch [" + msg.hashOf + "] chain is ["+pcMsg+"] best chain is ["+pcBest+"]");
+            if (Common.PARANOIA) { check(realtime); }
+            return;
         }
-        hashes.push(realtime.rpatches[i].parentHash);
     }
 
-    if (rollbackPatch) {
-        debug(realtime, "Rejecting patch ["+Message.hashOf(msg)+"]");
-        if (Common.PARANOIA) { check(realtime); }
-        return;
-    }
+    // Find the parents of this patch which are not in the main chain.
+    var toApply = [];
+    var current = msg;
+    do {
+        toApply.unshift(current);
+        current = getParent(realtime, current);
+        Common.assert(current);
+    } while (current !== commonAncestor);
 
-    if (i < 0 && (realtime.rpatches.length !== 0 && patch.parentHash !== EMPTY_STR_HASH)) {
-        debug(realtime, "base of patch ["+Message.hashOf(msg)+"] not found");
-try{
-        //Common.assert(msg.userName !== realtime.userName);
-}catch(e){
-debug(realtime, JSON.stringify(realtime.rpatches, null, '    '));
-throw e;
-}
-        if (Common.PARANOIA) { check(realtime); }
-        return;
-    }
 
     var authDocAtTimeOfPatch = realtime.authDoc;
-    var patchToApply = patch;
-    if (rollbackPatch !== null) {
-        if (Common.PARANOIA) {
-            Common.assert(Sha.hex_sha256(authDocAtTimeOfPatch) === rollbackPatch.parentHash);
-        }
-try{
-        authDocAtTimeOfPatch = Patch.apply(rollbackPatch, authDocAtTimeOfPatch);
-}catch (e) {
-debug(realtime, JSON.stringify(rollbackPatch));
-debug(realtime, authDocAtTimeOfPatch);
-throw e;
-}
-        if (Common.PARANOIA) {
-            Common.assert(Sha.hex_sha256(authDocAtTimeOfPatch) === patch.parentHash);
-        }
-        patchToApply = Patch.merge(rollbackPatch, patch);
+
+    for (var i = 0; i < toRevert.length; i++) {
+        authDocAtTimeOfPatch = Patch.apply(toRevert[i].content.inverseOf, authDocAtTimeOfPatch);
     }
 
-
-
-    var rpatch = Patch.invert(patch, authDocAtTimeOfPatch);
-
-    // Now we need to check that the hash of the result of the patch is less than that
-    // of all results which it displaces
-    for (var i = 0; i < hashes.length; i++) {
-        if (Common.compareHashes(rpatch.parentHash, hashes[i]) > 0) {
-            debug(realtime, "patch ["+Message.hashOf(msg)+"] rejected");
-            if (Common.PARANOIA) { check(realtime); }
-            return;
+    // toApply.length-1 because we do not want to apply the new patch.
+    for (var i = 0; i < toApply.length-1; i++) {
+        if (typeof(toApply[i].content.inverseOf) === 'undefined') {
+            toApply[i].content.inverseOf = Patch.invert(toApply[i].content, authDocAtTimeOfPatch);
+            toApply[i].content.inverseOf.inverseOf = toApply[i].content;
         }
+        authDocAtTimeOfPatch = Patch.apply(toApply[i].content, authDocAtTimeOfPatch);
     }
 
-    // ok we're really going to do this
-
-    for (var i = 0; i < hashes.length; i++) {
-        debug(realtime, "reverting [" + hashes[i] + "]");
-        realtime.rpatches.pop();
+    if (Sha.hex_sha256(authDocAtTimeOfPatch) !== patch.parentHash) {
+        debug(realtime, "patch [" + msg.hashOf + "] parentHash is not valid");
+        if (Common.PARANOIA) { check(realtime); }
+        if (Common.TESTING) { throw new Error(); }
+        delete realtime.messages[msg.hashOf];
+        return;
     }
-    debug(realtime, "applying ["+Message.hashOf(msg)+"]");
 
-    realtime.rpatches.push(rpatch);
+    if (!Patch.equals(Patch.simplify(patch, authDocAtTimeOfPatch), patch)) {
+        debug(realtime, "patch [" + msg.hashOf + "] can be simplified");
+        if (Common.PARANOIA) { check(realtime); }
+        if (Common.TESTING) { throw new Error(); }
+        delete realtime.messages[msg.hashOf];
+        return;
+    }
 
-//debug(realtime, "newhash " + rpatch.parentHash);
-//debug(realtime, realtime.authDoc);
+    patch.inverseOf = Patch.invert(patch, authDocAtTimeOfPatch);
+    patch.inverseOf.inverseOf = patch;
+
 
     realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
-
-    var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
-
+    var oldUserInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     if (Common.PARANOIA) {
-        Common.assert(userInterfaceContent === realtime.userInterfaceContent);
-    }
-
-    var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
-
-    var oldAuthDoc = realtime.authDoc;
-
-    // apply the patch to the authoritative document
-    realtime.authDoc = Patch.apply(patchToApply, realtime.authDoc);
-
-
-    // transform the uncommitted work
-    realtime.uncommitted = Patch.transform(realtime.uncommitted, patchToApply, oldAuthDoc);
-    realtime.uncommitted.parentHash = rpatch.parentHash;
-
-    if (msg.userName === realtime.userName) {
-        // We should not be forcing ourselves to roll anything back.
-        // Wrong, we pushed our patch then received a patch from someone else re-rooting us,
-        // then we received our own patch which switches us back.
-        //Common.assert(patchToApply === patch);
-        //Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
-
-//debug(realtime, JSON.stringify(inverseOldUncommitted) + 'xxx' + JSON.stringify(patch));
-        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patchToApply);
-        realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
-
-        realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
-
-        //realtime.uncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
-        //realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
-
-//debug(realtime, JSON.stringify(realtime.uncommitted));
-
-        if (patchToApply === patch) {
-            Common.assert(realtime.uncommitted.parentHash === rpatch.parentHash);
-            if (Common.PARANOIA) { check(realtime); }
-            return;
-        }
-//debug(realtime, JSON.stringify(realtime.uncommitted));
+        Common.assert(oldUserInterfaceContent === realtime.userInterfaceContent);
     }
 
     // Derive the patch for the user's uncommitted work
-    var uncommittedPatch = Patch.merge(inverseOldUncommitted, patchToApply);
-    uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);
+    var uncommittedPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
 
-    // Retarget the length of the user interface content
+    for (var i = 0; i < toRevert.length; i++) {
+        debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
+        uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
+        revertPatch(realtime, toRevert[i].userName, toRevert[i].content);
+    }
+
+    for (var i = 0; i < toApply.length; i++) {
+        debug(realtime, "applying [" + toApply[i].hashOf + "]");
+        uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
+        applyPatch(realtime, toApply[i].userName, toApply[i].content);
+    }
+
+    uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);
+    uncommittedPatch = Patch.simplify(uncommittedPatch, oldUserInterfaceContent);
+
     realtime.uncommittedDocLength += Patch.lengthChange(uncommittedPatch);
+    realtime.best = msg;
 
     if (Common.PARANOIA) {
         // apply the uncommittedPatch to the userInterface content.
-        realtime.userInterfaceContent =
-            Patch.apply(uncommittedPatch, realtime.userInterfaceContent);
+        var newUserInterfaceContent = Patch.apply(uncommittedPatch, oldUserInterfaceContent);
         Common.assert(realtime.userInterfaceContent.length === realtime.uncommittedDocLength);
-        debug(realtime, ">"+realtime.userInterfaceContent);
+        Common.assert(newUserInterfaceContent === realtime.userInterfaceContent);
     }
 
     // push the uncommittedPatch out to the user interface.
@@ -418,7 +472,7 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
         }),
         start: enterRealtime(realtime, function () {
             getMessages(realtime);
-            sync(realtime);
+            realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         }),
         abort: enterRealtime(realtime, function () {
             realtime.schedules.forEach(function (s) { clearTimeout(s) });

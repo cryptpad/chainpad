@@ -32,18 +32,56 @@ var onMessage = function () {
     rt.insert(3, "d");
 };
 
+var runOperation = function (realtimeFacade, op) {
+    if (op.toDelete > 0) {
+        realtimeFacade.remove(op.offset, op.toDelete);
+    }
+    if (op.toInsert.length > 0) {
+        realtimeFacade.insert(op.offset, op.toInsert);
+    }
+};
+
+var insert = function (doc, offset, chars) {
+    return doc.substring(0,offset) + chars + doc.substring(offset);
+};
+
+var remove = function (doc, offset, count) {
+    return doc.substring(0,offset) + doc.substring(offset+count);
+};
+
+var registerNode = function (name, initialDoc) {
+    var rt = Realtime.create(name,'y','abc',initialDoc);
+    onMsg = rt.onMessage;
+    var handlers = [];
+    onMsg(function (msg) {
+        process.nextTick(function () {
+            if (msg === ('1:y' + name.length + ':' + name + '3:abc3:[0]')) {
+                // registration
+                rt.message('0:3:abc3:[1]');
+            } else {
+                msg = msg.substring(3); //replace(/^1:y/, '');
+                handlers.forEach(function (handler) { handler(msg); });
+            }
+        });
+    });
+    rt.onMessage = function (handler) {
+        handlers.push(handler);
+    }
+
+    rt.doc = initialDoc;
+    rt.onInsert(function (offset, chars) { rt.doc = insert(rt.doc, offset, chars); console.log('---'+rt.doc); });
+    rt.onRemove(function (offset, count) { rt.doc = remove(rt.doc, offset, count); });
+
+    return rt;
+};
+
 var editing = function () {
     var doc = '';
-    var rt = Realtime.create('x','y','abc',doc);
+    var rt = registerNode('editing()', '');
     var messages = 0;
     rt.onMessage(function (msg) {
         messages++;
-        if (msg === '1:y1:x3:abc5:[0,0]') {
-            // registration
-            rt.message('0:3:abc5:[1,0]');
-        } else {
-            rt.message(msg.replace(/^1:y/, ''));
-        }
+        rt.message(msg);
     });
     rt.start();
 
@@ -63,25 +101,11 @@ var editing = function () {
         }
         // fire off another operation
         var op = Operation.random(doc.length);
-//console.log("OLDHASH:" + Sha.hex_sha256(doc));
         doc = Operation.apply(op, doc);
-        if (op.toDelete > 0) {
-            rt.remove(op.offset, op.toDelete);
-        }
-        if (op.toInsert.length > 0) {
-            rt.insert(op.offset, op.toInsert);
-        }
+        runOperation(rt, op);
         rt.sync();
     });
 
-};
-
-var insert = function (doc, offset, chars) {
-    return doc.substring(0,offset) + chars + doc.substring(offset);
-};
-
-var remove = function (doc, offset, count) {
-    return doc.substring(0,offset) + doc.substring(offset+count);
 };
 
 var fakeSetTimeout = function (func, time) {
@@ -92,33 +116,28 @@ var fakeSetTimeout = function (func, time) {
 
 var twoClientsCycle = function (callback) {
     var doc = '';
-    var rtA = Realtime.create('one','y','abc',doc);
-    var rtB = Realtime.create('two','y','abc',doc);
-    rtA.doc = rtB.doc = doc;
+    var rtA = registerNode('twoClients(rtA)', doc);
+    var rtB = registerNode('twoClients(rtB)', doc);
     rtA.queue = [];
     rtB.queue = [];
     var messages = 0;
     
     var onMsg = function (rt, msg) {
-console.log(msg);
-        messages++;
-        if (/1:y3:[a-z]{3}3:abc5:\[0,0\]/.test(msg)) {
-            // registration
-            rt.message('0:3:abc5:[1,0]');
-        } else {
-            var m = msg.replace(/^1:y/, '');
-            fakeSetTimeout(function () {
-                rtA.queue.push(m);
-                rtB.queue.push(m);
-                fakeSetTimeout(function () { rtA.message(rtA.queue.shift()); }, Math.random() * 100);
-                fakeSetTimeout(function () { rtB.message(rtB.queue.shift()); }, Math.random() * 100);
-            }, Math.random() * 100);
-        }
+        messages+=2;
+        var m = msg.replace(/^1:y/, '');
+        fakeSetTimeout(function () {
+            messages--;
+            rtA.queue.push(m);
+            fakeSetTimeout(function () { rtA.message(rtA.queue.shift()); }, Math.random() * 100);
+        }, Math.random() * 100);
+        fakeSetTimeout(function () {
+            messages--;
+            rtB.queue.push(m);
+            fakeSetTimeout(function () { rtB.message(rtB.queue.shift()); }, Math.random() * 100);
+        }, Math.random() * 100);
     };
     [rtA, rtB].forEach(function (rt) {
         rt.onMessage(function (msg) { onMsg(rt, msg) });
-        rt.onInsert(function (offset, chars) { rt.doc = insert(rt.doc, offset, chars); });
-        rt.onRemove(function (offset, count) { rt.doc = remove(rt.doc, offset, count); });
         rt.start();
     });
 
@@ -127,12 +146,12 @@ console.log(msg);
         if (i++ > 100) {
             clearTimeout(to);
             var j = 0;
+            var flushCounter = 0;
             var again = function () {
-                if (++j > 1000) { throw new Error("never synced"); }
-                var m = messages;
+                if (++j > 10000) { throw new Error("never synced"); }
                 rtA.sync();
                 rtB.sync();
-                if (m === messages && rtA.queue.length === 0 && rtB.queue.length === 0) {
+                if (messages === 0 && rtA.queue.length === 0 && rtB.queue.length === 0 && flushCounter++ > 100) {
                     console.log(rtA.doc);
                     console.log(rtB.doc);
                     Common.assert(rtA.doc === rtB.doc);
@@ -153,13 +172,7 @@ console.log(msg);
 
         var op = Operation.random(rt.doc.length);
         rt.doc = Operation.apply(op, rt.doc);
-
-        if (op.toDelete > 0) {
-            rt.remove(op.offset, op.toDelete);
-        }
-        if (op.toInsert.length > 0) {
-            rt.insert(op.offset, op.toInsert);
-        }
+        runOperation(rt, op);
 
         if (Math.random() > 0.8) {
             rt.sync();
@@ -170,14 +183,68 @@ console.log(msg);
 
 var twoClients = function () {
     var i = 0;
-    var again = function () { if (i++ < 1000) { twoClientsCycle(again); } };
+    var again = function () { if (i++ < 1) { twoClientsCycle(again); } };
+    again();
+};
+
+var syncCycle = function (messages, finalDoc, name, callback) {
+    var rt = registerNode(name, '');
+    for (var i = 0; i < messages.length; i++) {
+        rt.message(messages[i]);
+    }
+    process.nextTick(function () {
+        Common.assert(rt.doc === finalDoc);
+        rt.abort();
+        callback();
+    });
+};
+
+var outOfOrderSync = function () {
+    var messages = [];
+    var rtA = registerNode('outOfOrderSync()', '');
+    rtA.onMessage(function (msg) {
+        rtA.message(msg);
+        messages.push(msg);
+    });
+    var i = 0;
+    rtA.start();
+
+    var finish = function () {
+        rtA.abort();
+        var i = 0;
+        var cycle = function () {
+            if (i++ > 10) { return; }
+            // first sync is in order
+            syncCycle(messages, rtA.doc, 'outOfOrderSync(rt'+i+')', function () {
+                for (var j = 0; j < messages.length; j++) {
+                    var k = Math.floor(Math.random() * messages.length);
+                    var m = messages[k];
+                    messages[k] = messages[j];
+                    messages[j] = m;
+                }
+                cycle();
+            });
+        };
+        cycle();
+    };
+
+    var again = function () {
+        process.nextTick( (i++ < 150) ? again : finish );
+        if (i < 100) {
+            var op = Operation.random(rtA.doc.length);
+            rtA.doc = Operation.apply(op, rtA.doc);
+            runOperation(rtA, op);
+        }
+        rtA.sync();
+    };
     again();
 };
 
 var main = function () {
-    //startup();
+    startup();
     onMessage();
     editing();
     twoClients();
+    outOfOrderSync();
 };
 main();

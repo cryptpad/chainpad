@@ -32,19 +32,24 @@ var check = Message.check = function(msg) {
 
     if (msg.messageType === PATCH) {
         Patch.check(msg.content);
-    } else if (msg.messageType !== REGISTER && msg.messageType !== REGISTER_ACK) {
+        Common.assert(typeof(msg.lastMsgHash) === 'string');
+    } else if (msg.messageType === REGISTER || msg.messageType === REGISTER_ACK) {
+        Common.assert(typeof(msg.lastMsgHash) === 'undefined');
+        Common.assert(typeof(msg.content) === 'undefined');
+    } else {
         throw new Error("invalid message type [" + msg.messageType + "]");
     }
 };
 
-var create = Message.create = function (userName, authToken, channelId, type, content) {
+var create = Message.create = function (userName, authToken, channelId, type, content, lastMsgHash) {
     var msg = {
         type: 'Message',
         userName: userName,
         authToken: authToken,
         channelId: channelId,
         messageType: type,
-        content: content
+        content: content,
+        lastMsgHash: lastMsgHash
     };
     if (Common.PARANOIA) { check(msg); }
     return msg;
@@ -55,9 +60,9 @@ var toString = Message.toString = function (msg) {
     var prefix = msg.messageType + ':';
     var content = '';
     if (msg.messageType === REGISTER) {
-        content = JSON.stringify([REGISTER, 0]);
+        content = JSON.stringify([REGISTER]);
     } else if (msg.messageType === PATCH) {
-        content = JSON.stringify([PATCH, Patch.toObj(msg.content)]);
+        content = JSON.stringify([PATCH, Patch.toObj(msg.content), msg.lastMsgHash]);
     }
     return msg.authToken.length + ":" + msg.authToken +
         msg.userName.length + ":" + msg.userName +
@@ -85,10 +90,12 @@ var fromString = Message.fromString = function (str) {
     Common.assert(contentStr.length === Number(contentStrLen));
 
     var content = JSON.parse(contentStr);
+    var message;
     if (content[0] === PATCH) {
-        content[1] = Patch.fromObj(content[1]);
+        message = create(userName, '', channelId, PATCH, Patch.fromObj(content[1]), content[2]);
+    } else {
+        message = create(userName, '', channelId, content[0]);
     }
-    var message = create(userName, '', channelId, content[0], content[1]);
 
     // This check validates every operation in the patch.
     check(message);

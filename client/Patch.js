@@ -197,6 +197,14 @@ var simplify = Patch.simplify = function (patch, doc)
     return spatch;
 };
 
+var equals = Patch.equals = function (patchA, patchB) {
+    if (patchA.operations.length !== patchB.operations.length) { return false; }
+    for (var i = 0; i < patchA.operations.length; i++) {
+        if (!Operation.equals(patchA.operations[i], patchB.operations[i])) { return false; }
+    }
+    return true;
+};
+
 var transform = Patch.transform = function (origToTransform, transformBy, doc) {
     if (Common.PARANOIA) {
         check(origToTransform, doc.length);

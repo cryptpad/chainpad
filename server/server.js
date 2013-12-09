@@ -19,6 +19,9 @@
 
 var WebSocket = require('ws');
 var WebSocketServer = WebSocket.Server;
+var Static = require('node-static');
+var Http = require('http');
+var PORT = 8080;
 
 var REGISTER     = 0;
 var REGISTER_ACK = 1;
@@ -100,6 +103,10 @@ var handleMessage = function (ctx, socket, msg) {
     msg = popPassword(msg);
 
     if (parsed.content[0] === REGISTER) {
+if (ctx.registeredClients[userPass]) {
+    throw new Error("[" + userPass + "] already registered");
+}
+console.log("[" + userPass + "] registered");
         var client = ctx.registeredClients[userPass] = ctx.registeredClients[userPass] || {
             channels: [],
             userName: parsed.user
@@ -109,9 +116,14 @@ var handleMessage = function (ctx, socket, msg) {
         client.socket = socket;
 
         var chan = ctx.channels[parsed.channelId] = ctx.channels[parsed.channelId] || [];
+        chan.messages = chan.messages || [];
         chan.push(client);
 
         socket.send('0:' + parsed.channelId.length + ':' + parsed.channelId + '5:[1,0]');
+        for (var i = 0; i < chan.messages.length; i++) {
+console.log(chan.messages[i]);
+            socket.send(chan.messages[i]);
+        }
         return;
     }
 
@@ -122,6 +134,8 @@ var handleMessage = function (ctx, socket, msg) {
     if (typeof(channel) === 'undefined') { throw new Error('no such channel'); }
 
     if (channel.indexOf(client) === -1) { throw new Error('client not in channel'); }
+
+    channel.messages.push(msg);
 
     channel.forEach(function (user) {
         try {
@@ -134,14 +148,35 @@ var handleMessage = function (ctx, socket, msg) {
 };
 
 var main = function () {
+
+    var file = new Static.Server('../');
+
+    var authorizedUsers = [];
+
+    var httpServ = Http.createServer(function (request, response) {
+        request.addListener('end', function () {
+            if (request.url.indexOf('/getToken') === 0) {
+                var user = Math.random().toString(16).substring(2);
+                var pass = Math.random().toString(16).substring(2);
+                authorizedUsers.push(user + ':' + pass);
+                response.writeHead(200, {"Content-Type": "text/javascript"});
+                // add a - here to prevent jquery from doing soemthing magical
+                // because the content is valid json
+                response.write('-'+JSON.stringify({user:user,pass:pass}));
+                response.end();
+            }
+            file.serve(request, response);
+        });
+    });
+
+    httpServ.listen(PORT, '127.0.0.1');
+    console.log("Navigate your favorite web browser to http://127.0.0.1:8081/");
+
     var ctx = {
-        socketServer: wss = new WebSocketServer({
-            host: '127.0.0.1',
-            port: 8080
-        }),
+        socketServer: wss = new WebSocketServer({server: httpServ}),
         registeredClients: {},
         channels: {},
-        authorizedUsers: [ 'user:pass', 'user2:pass2' ]
+        authorizedUsers: authorizedUsers
     };
 
     wss.on('connection', function(socket) {
