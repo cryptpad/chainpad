@@ -13,18 +13,18 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-var Realtime = require('./Realtime');
+var ChainPad = require('./ChainPad');
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Sha = require('./SHA256');
 
 var startup = function () {
-    var rt = Realtime.create('x','y','abc','abc');
+    var rt = ChainPad.create('x','y','abc','abc');
     rt.abort();
 };
 
 var onMessage = function () {
-    var rt = Realtime.create('x','y','abc','abc');
+    var rt = ChainPad.create('x','y','abc','abc');
     rt.onMessage(function (msg) {
         console.log(msg);
         rt.abort();
@@ -50,7 +50,7 @@ var remove = function (doc, offset, count) {
 };
 
 var registerNode = function (name, initialDoc) {
-    var rt = Realtime.create(name,'y','abc',initialDoc);
+    var rt = ChainPad.create(name,'y','abc',initialDoc);
     onMsg = rt.onMessage;
     var handlers = [];
     onMsg(function (msg) {

@@ -169,7 +169,7 @@ var main = function () {
         });
     });
 
-    httpServ.listen(PORT, '127.0.0.1');
+    httpServ.listen(PORT);
     console.log("Navigate your favorite web browser to http://127.0.0.1:8081/");
 
     var ctx = {

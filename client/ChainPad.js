@@ -19,12 +19,12 @@ var Patch = require('./Patch');
 var Message = require('./Message');
 var Sha = require('./SHA256');
 
-var Realtime = {};
+var ChainPad = {};
 
 // hex_sha256('')
 var EMPTY_STR_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
-var enterRealtime = function (realtime, func) {
+var enterChainPad = function (realtime, func) {
     return function () {
         if (realtime.failed) { return; }
         try {
@@ -45,7 +45,7 @@ var schedule = function (realtime, func, timeout) {
     if (!timeout) {
         timeout = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
     }
-    var to = setTimeout(enterRealtime(realtime, function () {
+    var to = setTimeout(enterChainPad(realtime, function () {
         realtime.schedules.splice(realtime.schedules.indexOf(to), 1);
         func();
     }), timeout);
@@ -125,10 +125,10 @@ var getMessages = function (realtime) {
     });
 };
 
-var create = Realtime.create = function (userName, authToken, channelId, initialState) {
+var create = ChainPad.create = function (userName, authToken, channelId, initialState) {
 
     var realtime = {
-        type: 'Realtime',
+        type: 'ChainPad',
 
         authDoc: '',
 
@@ -197,8 +197,8 @@ var getParent = function (realtime, message) {
     return message.parent = message.parent || realtime.messages[message.lastMsgHash];
 };
 
-var check = Realtime.check = function(realtime) {
-    Common.assert(realtime.type === 'Realtime');
+var check = ChainPad.check = function(realtime) {
+    Common.assert(realtime.type === 'ChainPad');
     Common.assert(typeof(realtime.authDoc) === 'string');
 
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
@@ -226,7 +226,7 @@ var check = Realtime.check = function(realtime) {
     Common.assert(doc === realtime.authDoc);
 };
 
-var doOperation = Realtime.doOperation = function (realtime, op) {
+var doOperation = ChainPad.doOperation = function (realtime, op) {
     if (Common.PARANOIA) {
         check(realtime);
         realtime.userInterfaceContent = Operation.apply(op, realtime.userInterfaceContent);
@@ -285,7 +285,7 @@ var getBestChild = function (realtime, msg) {
     return best;
 };
 
-var handleMessage = Realtime.handleMessage = function (realtime, msgStr) {
+var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
@@ -438,46 +438,46 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
     Common.assert(typeof(authToken) === 'string');
     Common.assert(typeof(channelId) === 'string');
     Common.assert(typeof(initialState) === 'string');
-    var realtime = Realtime.create(userName, authToken, channelId, initialState);
+    var realtime = ChainPad.create(userName, authToken, channelId, initialState);
     return {
-        onRemove: enterRealtime(realtime, function (handler) {
+        onRemove: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.opHandlers.unshift(function (op) {
                 if (op.toDelete > 0) { handler(op.offset, op.toDelete); }
             });
         }),
-        onInsert: enterRealtime(realtime, function (handler) {
+        onInsert: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.opHandlers.push(function (op) {
                 if (op.toInsert.length > 0) { handler(op.offset, op.toInsert); }
             });
         }),
-        remove: enterRealtime(realtime, function (offset, numChars) {
+        remove: enterChainPad(realtime, function (offset, numChars) {
             var op = Operation.create();
             op.offset = offset;
             op.toDelete = numChars;
             doOperation(realtime, op);
         }),
-        insert: enterRealtime(realtime, function (offset, str) {
+        insert: enterChainPad(realtime, function (offset, str) {
             var op = Operation.create();
             op.offset = offset;
             op.toInsert = str;
             doOperation(realtime, op);
         }),
-        onMessage: enterRealtime(realtime, function (handler) {
+        onMessage: enterChainPad(realtime, function (handler) {
             realtime.onMessage = handler;
         }),
-        message: enterRealtime(realtime, function (message) {
+        message: enterChainPad(realtime, function (message) {
             handleMessage(realtime, message);
         }),
-        start: enterRealtime(realtime, function () {
+        start: enterChainPad(realtime, function () {
             getMessages(realtime);
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         }),
-        abort: enterRealtime(realtime, function () {
+        abort: enterChainPad(realtime, function () {
             realtime.schedules.forEach(function (s) { clearTimeout(s) });
         }),
-        sync: enterRealtime(realtime, function () {
+        sync: enterChainPad(realtime, function () {
             sync(realtime);
         })
     };

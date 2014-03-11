@@ -16,7 +16,7 @@
 <head></head>
 <body></body>
 <script src="/jquery.js"></script>
-<script src="/realtime-min.js"></script>
+<script src="/chainpad-min.js"></script>
 <script src="/sharejs_textarea.js"></script>
 <script>
 
@@ -25,10 +25,10 @@ var schedule = function (func) {
 };
 
 var mkRealtime = function (user, pass, channel, element) {
-    var socket = new WebSocket("ws://127.0.0.1:8080/");
+    var socket = new WebSocket("ws://laptop.cjd.in.hyperboria.ca:8080/");
     socket.onopen = function(evt) {
         var initState = $(element).val();
-        var realtime = Realtime.create(user, pass, channel, initState);
+        var realtime = ChainPad.create(user, pass, channel, initState);
         socket.onmessage = function (evt) { schedule(function () { realtime.message(evt.data); }); };
         realtime.onMessage(function (message) { schedule(function () { socket.send(message); }); });
 
