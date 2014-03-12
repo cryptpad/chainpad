@@ -1,7 +1,7 @@
-# ChainPad - The Realtime Consensus Algorithm
+# ChainPad
 
-ChainPad Algorithm is a peer-to-peer consensus algorithm based loosely on the
-[Nakamoto BlockChain](https://en.bitcoin.it/wiki/Block_chain). This implementation is designed
+ChainPad Algorithm is a Realtime Collaborative Editor algorithm based on
+[Nakamoto Blockchains](https://en.bitcoin.it/wiki/Block_chain). This implementation is designed
 to run with a dumb broadcasting server but with minimal effort, the algorithm could be ported to
 full peer-to-peer. Because the ChainPad server need not be aware of the content which is being
 edited, different types of editors can exist in harmony on the same system.
@@ -11,21 +11,30 @@ edited, different types of editors can exist in harmony on the same system.
 To embed ChainPad in your web application, it is recommended that you use the contained node.js
 websocket server. You may examine `test.html` to see how to bind the editor to a simple textarea.
 
+### Building
+
+To compile the code into `chainpad.js` run the following:
+
+    npm install
+    node make
+
+This will run the tests and concatinate the js files into the resulting `chainpad.js` output file.
+
 ## The API
 
 ```javascript
 /**
  * @param user The name of the user, passed to the server and to all other clients.
- *             Must be unique per-user because when you receive back a patch from the server
- *             which is one of your own, it is treated specially.
- * @param pass A password or API key which will be passed to the server but not to other clients.
- *             If security is not required, a trivial string may be used.
- * @param channel A string representing the document to be edited in case the server supports
- *                multiple documents.
- * @param initialState Optional parameter representing the state of the document at the beginning
- *                of the chainpad session or an empty string if not applicable. For each user of
- *                the chainpad editor joining the same document, the initialState needs to be
- *                the same.
+ *             Must be unique per-user because when you receive back a patch from the
+ *             server which is one of your own, it is treated specially.
+ * @param pass A password or API key which will be passed to the server but not to other
+ *             clients. If security is not required, a trivial string may be used.
+ * @param channel A string representing the document to be edited in case the server
+ *                supports multiple documents.
+ * @param initialState Optional parameter representing the state of the document at the
+ *                     beginning of the chainpad session or an empty string if not
+ *                     applicable. For each user of the chainpad editor joining the same
+ *                     document, the initialState needs to be the same.
  * @return a new ChainPad engine.
  */
 var chainpad = ChainPad.create(user, pass, channel, initState);
@@ -44,7 +53,7 @@ backend websocket and the same websocket server could be used for many websites.
 ## Binding the ChainPad Session to the Data Transport
 
 To bind the session to a data transport such as a websocket, you'll need to use the `message()`
-and `onMessage()` methods of the ChainPad chainpad object as follows:
+and `onMessage()` methods of the ChainPad session object as follows:
 
 * **message**: Function which takes a String and signals the ChainPad engine of an incoming
 message.
