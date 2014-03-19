@@ -112,13 +112,13 @@ Patch.transform(
       {
         "type": "Operation",
         "offset": 4,
-        "toDelete": 63,
+        "toRemove": 63,
         "toInsert": "VAPN]Z[bwdn\\OvP"
       },
       {
         "type": "Operation",
         "offset": 88,
-        "toDelete": 2,
+        "toRemove": 2,
         "toInsert": ""
       }
     ],
@@ -130,7 +130,7 @@ Patch.transform(
       {
         "type": "Operation",
         "offset": 0,
-        "toDelete": 92,
+        "toRemove": 92,
         "toInsert": "[[fWjLRmIVZV[BiG^IHqDGmCuooPE"
       }
     ],
@@ -146,7 +146,7 @@ Patch.transform(
       {
         "type": "Operation",
         "offset": 10,
-        "toDelete": 5,
+        "toRemove": 5,
         "toInsert": ""
       }
     ],
@@ -158,7 +158,7 @@ Patch.transform(
       {
         "type": "Operation",
         "offset": 10,
-        "toDelete": 5,
+        "toRemove": 5,
         "toInsert": ""
       }
     ],

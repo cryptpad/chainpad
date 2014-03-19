@@ -33,8 +33,8 @@ var onMessage = function () {
 };
 
 var runOperation = function (realtimeFacade, op) {
-    if (op.toDelete > 0) {
-        realtimeFacade.remove(op.offset, op.toDelete);
+    if (op.toRemove > 0) {
+        realtimeFacade.remove(op.offset, op.toRemove);
     }
     if (op.toInsert.length > 0) {
         realtimeFacade.insert(op.offset, op.toInsert);

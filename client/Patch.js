@@ -160,7 +160,7 @@ var invert = Patch.invert = function (patch, doc)
     }
     for (var i = rpatch.operations.length-1; i >= 0; i--) {
         for (var j = i - 1; j >= 0; j--) {
-            rpatch.operations[i].offset += rpatch.operations[j].toDelete;
+            rpatch.operations[i].offset += rpatch.operations[j].toRemove;
             rpatch.operations[i].offset -= rpatch.operations[j].toInsert.length;
         }
     }

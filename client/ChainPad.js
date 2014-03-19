@@ -443,7 +443,7 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
         onRemove: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.opHandlers.unshift(function (op) {
-                if (op.toDelete > 0) { handler(op.offset, op.toDelete); }
+                if (op.toRemove > 0) { handler(op.offset, op.toRemove); }
             });
         }),
         onInsert: enterChainPad(realtime, function (handler) {
@@ -455,7 +455,7 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
         remove: enterChainPad(realtime, function (offset, numChars) {
             var op = Operation.create();
             op.offset = offset;
-            op.toDelete = numChars;
+            op.toRemove = numChars;
             doOperation(realtime, op);
         }),
         insert: enterChainPad(realtime, function (offset, str) {

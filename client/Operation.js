@@ -20,29 +20,29 @@ var create = Operation.create = function () {
     return {
         type: 'Operation',
         offset: 0,
-        toDelete: 0,
+        toRemove: 0,
         toInsert: '',
     };
 };
 var check = Operation.check = function (op, docLength_opt) {
     Common.assert(op.type === 'Operation');
     Common.assert(Common.isUint(op.offset));
-    Common.assert(Common.isUint(op.toDelete));
+    Common.assert(Common.isUint(op.toRemove));
     Common.assert(typeof(op.toInsert) === 'string');
-    Common.assert(op.toDelete > 0 || op.toInsert.length > 0);
-    Common.assert(typeof(docLength_opt) !== 'number' || op.offset + op.toDelete <= docLength_opt);
+    Common.assert(op.toRemove > 0 || op.toInsert.length > 0);
+    Common.assert(typeof(docLength_opt) !== 'number' || op.offset + op.toRemove <= docLength_opt);
 };
 
 var toObj = Operation.toObj = function (op) {
     if (Common.PARANOIA) { check(op); }
-    return [op.offset,op.toDelete,op.toInsert];
+    return [op.offset,op.toRemove,op.toInsert];
 };
 
 var fromObj = Operation.fromObj = function (obj) {
     Common.assert(Array.isArray(obj) && obj.length === 3);
     var op = create();
     op.offset = obj[0];
-    op.toDelete = obj[1];
+    op.toRemove = obj[1];
     op.toInsert = obj[2];
     if (Common.PARANOIA) { check(op); }
     return op;
@@ -52,7 +52,7 @@ var clone = Operation.clone = function (op) {
     if (Common.PARANOIA) { check(op); }
     var out = create();
     out.offset = op.offset;
-    out.toDelete = op.toDelete;
+    out.toRemove = op.toRemove;
     out.toInsert = op.toInsert;
     return out;
 };
@@ -66,20 +66,20 @@ var apply = Operation.apply = function (op, doc)
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
-        Common.assert(op.offset + op.toDelete <= doc.length);
+        Common.assert(op.offset + op.toRemove <= doc.length);
     }
-    return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toDelete);
+    return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
 var invert = Operation.invert = function (op, doc) {
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
-        Common.assert(op.offset + op.toDelete <= doc.length);
+        Common.assert(op.offset + op.toRemove <= doc.length);
     }
     var rop = clone(op);
-    rop.toInsert = doc.substring(op.offset, op.offset + op.toDelete);
-    rop.toDelete = op.toInsert.length;
+    rop.toInsert = doc.substring(op.offset, op.offset + op.toRemove);
+    rop.toRemove = op.toInsert.length;
     return rop;
 };
 
@@ -87,7 +87,7 @@ var simplify = Operation.simplify = function (op, doc) {
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
-        Common.assert(op.offset + op.toDelete <= doc.length);
+        Common.assert(op.offset + op.toRemove <= doc.length);
     }
     var rop = invert(op, doc);
     op = clone(op);
@@ -96,22 +96,22 @@ var simplify = Operation.simplify = function (op, doc) {
     var i;
     for (i = 0; i < minLen && rop.toInsert[i] === op.toInsert[i]; i++) ;
     op.offset += i;
-    op.toDelete -= i;
+    op.toRemove -= i;
     op.toInsert = op.toInsert.substring(i);
     rop.toInsert = rop.toInsert.substring(i);
 
     if (rop.toInsert.length === op.toInsert.length) {
         for (i = rop.toInsert.length-1; i >= 0 && rop.toInsert[i] === op.toInsert[i]; i--) ;
         op.toInsert = op.toInsert.substring(0, i+1);
-        op.toDelete = i+1;
+        op.toRemove = i+1;
     }
 
-    if (op.toDelete === 0 && op.toInsert.length === 0) { return null; }
+    if (op.toRemove === 0 && op.toInsert.length === 0) { return null; }
     return op;
 };
 
 var equals = Operation.equals = function (opA, opB) {
-    return (opA.toDelete === opB.toDelete
+    return (opA.toRemove === opB.toRemove
         && opA.toInsert === opB.toInsert
         && opA.offset === opB.offset);
 };
@@ -119,7 +119,7 @@ var equals = Operation.equals = function (opA, opB) {
 var lengthChange = Operation.lengthChange = function (op)
 {
     if (Common.PARANOIA) { check(op); }
-    return op.toInsert.length - op.toDelete;
+    return op.toInsert.length - op.toRemove;
 };
 
 /*
@@ -135,17 +135,17 @@ var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
     var oldOp = clone(oldOpOrig);
     var offsetDiff = newOp.offset - oldOp.offset;
 
-    if (newOp.toDelete > 0) {
+    if (newOp.toRemove > 0) {
         var origOldInsert = oldOp.toInsert;
         oldOp.toInsert = (
              oldOp.toInsert.substring(0,offsetDiff)
-           + oldOp.toInsert.substring(offsetDiff + newOp.toDelete)
+           + oldOp.toInsert.substring(offsetDiff + newOp.toRemove)
         );
-        newOp.toDelete -= (origOldInsert.length - oldOp.toInsert.length);
-        if (newOp.toDelete < 0) { newOp.toDelete = 0; }
+        newOp.toRemove -= (origOldInsert.length - oldOp.toInsert.length);
+        if (newOp.toRemove < 0) { newOp.toRemove = 0; }
 
-        oldOp.toDelete += newOp.toDelete;
-        newOp.toDelete = 0;
+        oldOp.toRemove += newOp.toRemove;
+        newOp.toRemove = 0;
     }
 
     if (offsetDiff < 0) {
@@ -166,7 +166,7 @@ var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
                         JSON.stringify([oldOpOrig,newOpOrig], null, '  '));
     }
 
-    if (oldOp.toInsert === '' && oldOp.toDelete === 0) {
+    if (oldOp.toInsert === '' && oldOp.toRemove === 0) {
         return null;
     }
     if (Common.PARANOIA) { check(oldOp); }
@@ -184,7 +184,7 @@ var shouldMerge = Operation.shouldMerge = function (oldOp, newOp) {
         check(newOp);
     }
     if (newOp.offset < oldOp.offset) {
-        return (oldOp.offset <= (newOp.offset + newOp.toDelete));
+        return (oldOp.offset <= (newOp.offset + newOp.toRemove));
     } else {
         return (newOp.offset <= (oldOp.offset + oldOp.toInsert.length));
     }
@@ -206,7 +206,7 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
     }
     if (newOp.offset < oldOp.offset) { return newOp; }
     newOp = clone(newOp);
-    newOp.offset += oldOp.toDelete;
+    newOp.offset += oldOp.toRemove;
     newOp.offset -= oldOp.toInsert.length;
     return newOp;
 };
@@ -227,28 +227,28 @@ var transform = Operation.transform = function (toTransform, transformBy) {
     }
     if (toTransform.offset > transformBy.offset) {
         toTransform = clone(toTransform);
-        if (toTransform.offset > transformBy.offset + transformBy.toDelete) {
+        if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
             // simple rebase
-            toTransform.offset -= transformBy.toDelete;
+            toTransform.offset -= transformBy.toRemove;
             toTransform.offset += transformBy.toInsert.length;
             return toTransform;
         }
         // goto the end, anything you deleted that they also deleted should be skipped.
         var newOffset = transformBy.offset + transformBy.toInsert.length;
-        toTransform.toDelete = 0; //-= (newOffset - toTransform.offset);
-        if (toTransform.toDelete < 0) { toTransform.toDelete = 0; }
+        toTransform.toRemove = 0; //-= (newOffset - toTransform.offset);
+        if (toTransform.toRemove < 0) { toTransform.toRemove = 0; }
         toTransform.offset = newOffset;
-        if (toTransform.toInsert.length === 0 && toTransform.toDelete === 0) {
+        if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
             return null;
         }
         return toTransform;
     }
-    if (toTransform.offset + toTransform.toDelete < transformBy.offset) {
+    if (toTransform.offset + toTransform.toRemove < transformBy.offset) {
         return toTransform;
     }
     toTransform = clone(toTransform);
-    toTransform.toDelete = transformBy.offset - toTransform.offset;
-    if (toTransform.toInsert.length === 0 && toTransform.toDelete === 0) {
+    toTransform.toRemove = transformBy.offset - toTransform.offset;
+    if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
         return null;
     }
     return toTransform;
@@ -259,10 +259,10 @@ var random = Operation.random = function (docLength) {
     Common.assert(Common.isUint(docLength));
     var op = create();
     op.offset = Math.floor(Math.random() * 100000000 % docLength) || 0;
-    op.toDelete = Math.floor(Math.random() * 100000000 % (docLength - op.offset)) || 0;
+    op.toRemove = Math.floor(Math.random() * 100000000 % (docLength - op.offset)) || 0;
     do {
         op.toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
-    } while (op.toDelete === 0 && op.toInsert === '');
+    } while (op.toRemove === 0 && op.toInsert === '');
     if (Common.PARANOIA) { check(op); }
     return op;
 };
