@@ -23,6 +23,7 @@ var ChainPad = {};
 
 // hex_sha256('')
 var EMPTY_STR_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+var ZERO =           '0000000000000000000000000000000000000000000000000000000000000000';
 
 var enterChainPad = function (realtime, func) {
     return function () {
@@ -30,6 +31,7 @@ var enterChainPad = function (realtime, func) {
         try {
             func.apply(null, arguments);
         } catch (err) {
+console.log(err.stack);
             realtime.failed = true;
             err.message += ' (' + realtime.userName + ')';
             throw err;
@@ -79,12 +81,17 @@ var sync = function (realtime) {
         return;
     }
 
-    var msg = Message.create(realtime.userName,
+    var msg;
+    if (realtime.best === realtime.initialMessage) {
+        msg = realtime.initialMessage;
+    } else {
+        msg = Message.create(realtime.userName,
                              realtime.authToken,
                              realtime.channelId,
                              Message.PATCH,
                              realtime.uncommitted,
                              realtime.best.hashOf);
+    }
 
     var strMsg = Message.toString(msg);
 
@@ -103,6 +110,10 @@ var sync = function (realtime) {
     realtime.pending = {
         hash: hash,
         callback: function () {
+            if (realtime.initialMessage && realtime.initialMessage.hashOf === hash) {
+                debug(realtime, "initial Ack received ["+hash+"]");
+                realtime.initialMessage = null;
+            }
             unschedule(realtime, timeout);
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
         }
@@ -141,6 +152,7 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
 
         uncommittedDocLength: initialState.length,
 
+        patchHandlers: [],
         opHandlers: [],
 
         onMessage: function (message, callback) {
@@ -166,29 +178,67 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
         messages: {},
         messagesByParent: {},
 
-        rootMessage: null
+        rootMessage: null,
+
+        /**
+         * Set to the message which sets the initialState if applicable.
+         * Reset to null after the initial message has been successfully broadcasted.
+         */
+        initialMessage: null
     };
 
     if (Common.PARANOIA) {
         realtime.userInterfaceContent = initialState;
     }
 
-    var initialPatch = Patch.create(EMPTY_STR_HASH);
-    if (initialState !== '') {
-        var initialOp = Operation.create();
-        initialOp.toInsert = initialState;
-        Patch.addOperation(initialPatch, initialOp);
-        realtime.authDoc = Patch.apply(initialPatch, '');
+    var zeroPatch = Patch.create(EMPTY_STR_HASH);
+    zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
+    zeroPatch.inverseOf.inverseOf = zeroPatch;
+    var zeroMsg = Message.create('', '', channelId, Message.PATCH, zeroPatch, ZERO);
+    zeroMsg.hashOf = Message.hashOf(zeroMsg);
+    zeroMsg.parentCount = 0;
+    realtime.messages[zeroMsg.hashOf] = zeroMsg;
+    (realtime.messagesByParent[zeroMsg.lastMessageHash] || []).push(zeroMsg);
+    realtime.rootMessage = zeroMsg;
+    realtime.best = zeroMsg;
+
+    if (initialState === '') {
+        realtime.uncommitted = Patch.create(zeroPatch.inverseOf.parentHash);
+        return realtime;
     }
-    initialPatch.inverseOf = Patch.invert(initialPatch, '');
-    var msg = Message.create('', '', channelId, Message.PATCH, initialPatch, '');
-    msg.lastMsgHash = '0000000000000000000000000000000000000000000000000000000000000000';
-    msg.hashOf = Message.hashOf(msg);
-    msg.parentCount = 0;
-    realtime.messages[msg.hashOf] = msg;
-    realtime.rootMessage = msg;
-    realtime.best = msg;
-    realtime.uncommitted = Patch.create(initialPatch.inverseOf.parentHash);
+
+    var initialOp = Operation.create();
+    initialOp.toInsert = initialState;
+    var initialStatePatch = Patch.create(zeroPatch.inverseOf.parentHash);
+    Patch.addOperation(initialStatePatch, initialOp);
+    initialStatePatch.inverseOf = Patch.invert(initialStatePatch, '');
+    initialStatePatch.inverseOf.inverseOf = initialStatePatch;
+
+    // flag this patch so it can be handled specially.
+    // Specifically, we never treat an initialStatePatch as our own,
+    // we let it be reverted to prevent duplication of data.
+    initialStatePatch.isInitialStatePatch = true;
+    initialStatePatch.inverseOf.isInitialStatePatch = true;
+
+    realtime.authDoc = initialState;
+    if (Common.PARANOIA) {
+        realtime.userInterfaceContent = initialState;
+    }
+    initialMessage = Message.create(realtime.userName,
+                                    realtime.authToken,
+                                    realtime.channelId,
+                                    Message.PATCH,
+                                    initialStatePatch,
+                                    zeroMsg.hashOf);
+    initialMessage.hashOf = Message.hashOf(initialMessage);
+    initialMessage.parentCount = 1;
+
+    realtime.messages[initialMessage.hashOf] = initialMessage;
+    (realtime.messagesByParent[initialMessage.lastMessageHash] || []).push(initialMessage);
+
+    realtime.best = initialMessage;
+    realtime.uncommitted = Patch.create(initialStatePatch.inverseOf.parentHash);
+    realtime.initialMessage = initialMessage;
 
     return realtime;
 };
@@ -250,7 +300,7 @@ var parentCount = function (realtime, message) {
 };
 
 var applyPatch = function (realtime, author, patch) {
-    if (author === realtime.userName) {
+    if (author === realtime.userName && !patch.isInitialStatePatch) {
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
         if (Common.PARANOIA) {
@@ -304,6 +354,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (realtime.pending && realtime.pending.hash === msg.hashOf) {
         realtime.pending.callback();
         realtime.pending = null;
+    }
+
+    if (realtime.messages[msg.hashOf]) {
+        debug(realtime, "Patch [" + msg.hashOf + "] is already known");
+        if (Common.PARANOIA) { check(realtime); }
+        return;
     }
 
     realtime.messages[msg.hashOf] = msg;
@@ -389,7 +445,6 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     patch.inverseOf = Patch.invert(patch, authDocAtTimeOfPatch);
     patch.inverseOf.inverseOf = patch;
 
-
     realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
     var oldUserInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     if (Common.PARANOIA) {
@@ -425,9 +480,14 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     }
 
     // push the uncommittedPatch out to the user interface.
-    for (var i = uncommittedPatch.operations.length-1; i >= 0; i--) {
-        for (var j = 0; j < realtime.opHandlers.length; j++) {
-            realtime.opHandlers[j](uncommittedPatch.operations[i]);
+    for (var i = 0; i < realtime.patchHandlers.length; i++) {
+        realtime.patchHandlers[i](uncommittedPatch);
+    }
+    if (realtime.opHandlers.length) {
+        for (var i = uncommittedPatch.operations.length-1; i >= 0; i--) {
+            for (var j = 0; j < realtime.opHandlers.length; j++) {
+                realtime.opHandlers[j](uncommittedPatch.operations[i]);
+            }
         }
     }
     if (Common.PARANOIA) { check(realtime); }
@@ -440,6 +500,10 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
     Common.assert(typeof(initialState) === 'string');
     var realtime = ChainPad.create(userName, authToken, channelId, initialState);
     return {
+        onPatch: enterChainPad(realtime, function (handler) {
+            Common.assert(typeof(handler) === 'function');
+            realtime.patchHandlers.push(handler);
+        }),
         onRemove: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.opHandlers.unshift(function (op) {
@@ -479,6 +543,8 @@ module.exports.create = function (userName, authToken, channelId, initialState) 
         }),
         sync: enterChainPad(realtime, function () {
             sync(realtime);
-        })
+        }),
+        getAuthDoc: function () { return realtime.authDoc; },
+        getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); }
     };
 };

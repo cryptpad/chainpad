@@ -114,10 +114,9 @@ var fakeSetTimeout = function (func, time) {
     process.nextTick(tick);
 };
 
-var twoClientsCycle = function (callback) {
-    var doc = '';
-    var rtA = registerNode('twoClients(rtA)', doc);
-    var rtB = registerNode('twoClients(rtB)', doc);
+var twoClientsCycle = function (callback, origDocA, origDocB) {
+    var rtA = registerNode('twoClients(rtA)', origDocA);
+    var rtB = registerNode('twoClients(rtB)', origDocB);
     rtA.queue = [];
     rtB.queue = [];
     var messages = 0;
@@ -183,7 +182,12 @@ var twoClientsCycle = function (callback) {
 
 var twoClients = function () {
     var i = 0;
-    var again = function () { if (i++ < 1) { twoClientsCycle(again); } };
+    var again = function () {
+        if (i++ >= 1) { return; }
+        var docA = Common.randomASCII(Math.floor(Math.random()*20));
+        var docB = Common.randomASCII(Math.floor(Math.random()*20));
+        twoClientsCycle(again, docA, docB);
+    };
     again();
 };
 

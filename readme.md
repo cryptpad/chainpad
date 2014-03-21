@@ -33,8 +33,8 @@ This will run the tests and concatinate the js files into the resulting `chainpa
  *                supports multiple documents.
  * @param initialState Optional parameter representing the state of the document at the
  *                     beginning of the chainpad session or an empty string if not
- *                     applicable. For each user of the chainpad editor joining the same
- *                     document, the initialState needs to be the same.
+ *                     applicable. If one user joins with a different initialState than
+ *                     another, the situation will be resolved as an ordenary conflict.
  * @return a new ChainPad engine.
  */
 var chainpad = ChainPad.create(user, pass, channel, initState);
@@ -82,6 +82,14 @@ document.
 chainpad.onInsert(function(position, text) {});
 ```
 
+* Register a function to handle a patch to the document, a patch is a series of insertions and
+deletions which may must be applied atomically. When applying, the operations in the patch must
+be applied in *decending* order, from highest index to zero. The operations in the patch will
+also be sent to whichever functions have been registered with **onInsert()** and **onRemove()**.
+```javascript
+chainpad.onPatch(function(patch) {});
+```
+
 * Signal the chainpad engine that the user has removed text from the document.
 ```javascript
 chainpad.remove(position, length);
@@ -107,6 +115,17 @@ chainpad.abort();
 committed, just that it has attempted to send it to the server.
 ```javascript
 chainpad.sync();
+```
+
+* Access the *Authoritative Document*, useful for debugging.
+```javascript
+chainpad.getAuthDoc();
+```
+
+* Access the document which the engine believes is in the user interface, this is equivilant to
+the *Authoritative Document* with the *Uncommitted Work* patch applied. Useful for debugging.
+```javascript
+chainpad.getUserDoc();
 ```
 
 # Internals
