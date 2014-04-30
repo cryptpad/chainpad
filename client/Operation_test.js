@@ -94,6 +94,11 @@ var simplify = function () {
         if (sopAB) {
             sdocB = Operation.apply(sopAB, docA);
         }
+        if (sdocB !== docB) {
+            console.log(docA);
+            console.log(JSON.stringify(opAB, null, '  '));
+            console.log(JSON.stringify(sopAB, null, '  '));
+        }
         Common.assert(sdocB === docB);
     }
 };

@@ -169,19 +169,20 @@ var invert = Patch.invert = function (patch, doc)
     return rpatch;
 };
 
-var simplify = Patch.simplify = function (patch, doc)
+var simplify = Patch.simplify = function (patch, doc, operationSimplify)
 {
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
+    operationSimplify = operationSimplify || Operation.simplify;
     var spatch = create(patch.parentHash);
     var newDoc = doc;
     var outOps = [];
     var j = 0;
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        outOps[j] = Operation.simplify(patch.operations[i], newDoc);
+        outOps[j] = operationSimplify(patch.operations[i], newDoc);
         if (outOps[j]) {
             newDoc = Operation.apply(outOps[j], newDoc);
             j++;

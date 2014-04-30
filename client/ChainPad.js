@@ -28,14 +28,7 @@ var ZERO =           '0000000000000000000000000000000000000000000000000000000000
 var enterChainPad = function (realtime, func) {
     return function () {
         if (realtime.failed) { return; }
-        try {
-            func.apply(null, arguments);
-        } catch (err) {
-console.log(err.stack);
-            realtime.failed = true;
-            err.message += ' (' + realtime.userName + ')';
-            throw err;
-        }
+        func.apply(null, arguments);
     };
 };
 
@@ -73,7 +66,8 @@ var sync = function (realtime) {
         return;
     }
 
-    realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+    realtime.uncommitted = Patch.simplify(
+        realtime.uncommitted, realtime.authDoc, realtime.config.operationSimplify);
 
     if (realtime.uncommitted.operations.length === 0) {
         //debug(realtime, "No data to sync to the server, sleeping");
@@ -136,12 +130,14 @@ var getMessages = function (realtime) {
     });
 };
 
-var create = ChainPad.create = function (userName, authToken, channelId, initialState) {
+var create = ChainPad.create = function (userName, authToken, channelId, initialState, config) {
 
     var realtime = {
         type: 'ChainPad',
 
         authDoc: '',
+
+        config: config || {},
 
         userName: userName,
         authToken: authToken,
@@ -347,7 +343,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         return;
     }
 
-    Common.assert(msg.messageType === Message.PATCH);
+    // otherwise it's a disconnect.
+    if (msg.messageType !== Message.PATCH) { return; }
 
     msg.hashOf = Message.hashOf(msg);
 
@@ -434,7 +431,9 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         return;
     }
 
-    if (!Patch.equals(Patch.simplify(patch, authDocAtTimeOfPatch), patch)) {
+    var simplePatch =
+        Patch.simplify(patch, authDocAtTimeOfPatch, realtime.config.operationSimplify);
+    if (!Patch.equals(simplePatch, patch)) {
         debug(realtime, "patch [" + msg.hashOf + "] can be simplified");
         if (Common.PARANOIA) { check(realtime); }
         if (Common.TESTING) { throw new Error(); }
@@ -445,7 +444,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     patch.inverseOf = Patch.invert(patch, authDocAtTimeOfPatch);
     patch.inverseOf.inverseOf = patch;
 
-    realtime.uncommitted = Patch.simplify(realtime.uncommitted, realtime.authDoc);
+    realtime.uncommitted = Patch.simplify(
+        realtime.uncommitted, realtime.authDoc, realtime.config.operationSimplify);
     var oldUserInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     if (Common.PARANOIA) {
         Common.assert(oldUserInterfaceContent === realtime.userInterfaceContent);
@@ -467,7 +467,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     }
 
     uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);
-    uncommittedPatch = Patch.simplify(uncommittedPatch, oldUserInterfaceContent);
+    uncommittedPatch = Patch.simplify(
+        uncommittedPatch, oldUserInterfaceContent, realtime.config.operationSimplify);
 
     realtime.uncommittedDocLength += Patch.lengthChange(uncommittedPatch);
     realtime.best = msg;
@@ -493,12 +494,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
-module.exports.create = function (userName, authToken, channelId, initialState) {
+module.exports.create = function (userName, authToken, channelId, initialState, conf) {
     Common.assert(typeof(userName) === 'string');
     Common.assert(typeof(authToken) === 'string');
     Common.assert(typeof(channelId) === 'string');
     Common.assert(typeof(initialState) === 'string');
-    var realtime = ChainPad.create(userName, authToken, channelId, initialState);
+    var realtime = ChainPad.create(userName, authToken, channelId, initialState, conf);
     return {
         onPatch: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
