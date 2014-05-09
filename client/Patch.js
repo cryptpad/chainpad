@@ -182,7 +182,7 @@ var simplify = Patch.simplify = function (patch, doc, operationSimplify)
     var outOps = [];
     var j = 0;
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        outOps[j] = operationSimplify(patch.operations[i], newDoc);
+        outOps[j] = operationSimplify(patch.operations[i], newDoc, Operation.simplify);
         if (outOps[j]) {
             newDoc = Operation.apply(outOps[j], newDoc);
             j++;
