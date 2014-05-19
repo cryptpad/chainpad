@@ -180,7 +180,10 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
          * Set to the message which sets the initialState if applicable.
          * Reset to null after the initial message has been successfully broadcasted.
          */
-        initialMessage: null
+        initialMessage: null,
+
+        userListChangeHandlers: [],
+        userList: []
     };
 
     if (Common.PARANOIA) {
@@ -331,6 +334,14 @@ var getBestChild = function (realtime, msg) {
     return best;
 };
 
+var userListChange = function (realtime) {
+    for (var i = 0; i < realtime.userListChangeHandlers.length; i++) {
+        var list = [];
+        list.push.apply(list, realtime.userList);
+        realtime.userListChangeHandlers[i](list);
+    }
+};
+
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
 
     if (Common.PARANOIA) { check(realtime); }
@@ -340,6 +351,22 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (msg.messageType === Message.REGISTER_ACK) {
         debug(realtime, "registered");
         realtime.registered = true;
+        return;
+    }
+
+    if (msg.messageType === Message.REGISTER) {
+        realtime.userList.push(msg.userName);
+        userListChange(realtime);
+        return;
+    }
+
+    if (msg.messageType === Message.DISCONNECT) {
+        var idx = realtime.userList.indexOf(msg.userName);
+        if (Common.PARANOIA) { Common.assert(idx > -1); }
+        if (idx > -1) {
+            realtime.userList.splice(idx, 1);
+            userListChange(realtime);
+        }
         return;
     }
 
@@ -546,6 +573,10 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
             sync(realtime);
         }),
         getAuthDoc: function () { return realtime.authDoc; },
-        getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); }
+        getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); },
+        onUserListChange: enterChainPad(realtime, function (handler) {
+            Common.assert(typeof(handler) === 'function');
+            realtime.userListChangeHandlers.push(handler);
+        })
     };
 };
