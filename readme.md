@@ -6,6 +6,8 @@ to run with a dumb broadcasting server but with minimal effort, the algorithm co
 full peer-to-peer. Because the ChainPad server need not be aware of the content which is being
 edited, different types of editors can exist in harmony on the same system.
 
+Issues: http://jira.xwiki.org/browse/RTCHAINPAD
+
 ## Getting Started
 
 To embed ChainPad in your web application, it is recommended that you use the contained node.js
