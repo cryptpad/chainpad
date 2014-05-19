@@ -24,6 +24,8 @@ var REGISTER     = Message.REGISTER     = 0;
 var REGISTER_ACK = Message.REGISTER_ACK = 1;
 var PATCH        = Message.PATCH        = 2;
 var DISCONNECT   = Message.DISCONNECT   = 3;
+var PING         = Message.PING         = 4;
+var PONG         = Message.PONG         = 5;
 
 var check = Message.check = function(msg) {
     Common.assert(msg.type === 'Message');
@@ -34,6 +36,9 @@ var check = Message.check = function(msg) {
     if (msg.messageType === PATCH) {
         Patch.check(msg.content);
         Common.assert(typeof(msg.lastMsgHash) === 'string');
+    } else if (msg.messageType === PING || msg.messageType === PONG) {
+        Common.assert(typeof(msg.lastMsgHash) === 'undefined');
+        Common.assert(typeof(msg.content) === 'number');
     } else if (msg.messageType === REGISTER
         || msg.messageType === REGISTER_ACK
         || msg.messageType === DISCONNECT)
@@ -65,6 +70,8 @@ var toString = Message.toString = function (msg) {
     var content = '';
     if (msg.messageType === REGISTER) {
         content = JSON.stringify([REGISTER]);
+    } else if (msg.messageType === PING || msg.messageType === PONG) {
+        content = JSON.stringify([msg.messageType, msg.content]);
     } else if (msg.messageType === PATCH) {
         content = JSON.stringify([PATCH, Patch.toObj(msg.content), msg.lastMsgHash]);
     }
@@ -97,6 +104,8 @@ var fromString = Message.fromString = function (str) {
     var message;
     if (content[0] === PATCH) {
         message = create(userName, '', channelId, PATCH, Patch.fromObj(content[1]), content[2]);
+    } else if (content[0] === PING || content[0] === PONG) {
+        message = create(userName, '', channelId, content[0], content[1]);
     } else {
         message = create(userName, '', channelId, content[0]);
     }

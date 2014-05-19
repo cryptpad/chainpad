@@ -23,15 +23,6 @@ var startup = function () {
     rt.abort();
 };
 
-var onMessage = function () {
-    var rt = ChainPad.create('x','y','abc','abc');
-    rt.onMessage(function (msg) {
-        console.log(msg);
-        rt.abort();
-    });
-    rt.insert(3, "d");
-};
-
 var runOperation = function (realtimeFacade, op) {
     if (op.toRemove > 0) {
         realtimeFacade.remove(op.offset, op.toRemove);
@@ -246,7 +237,6 @@ var outOfOrderSync = function () {
 
 var main = function () {
     startup();
-    onMessage();
     editing();
     twoClients();
     outOfOrderSync();

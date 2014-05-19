@@ -130,6 +130,29 @@ var getMessages = function (realtime) {
     });
 };
 
+var sendPing = function (realtime) {
+    realtime.pingSchedule = undefined;
+    realtime.lastPingTime = (new Date()).getTime();
+    var msg = Message.create(realtime.userName,
+                             realtime.authToken,
+                             realtime.channelId,
+                             Message.PING,
+                             realtime.lastPingTime);
+    realtime.onMessage(Message.toString(msg), function (err) {
+        if (err) { throw err; }
+    });
+};
+
+var onPong = function (realtime, msg) {
+    if (Common.PARANOIA) {
+        Common.assert(realtime.lastPingTime === Number(msg.content));
+    }
+    realtime.lastPingLag = (new Date()).getTime() - Number(msg.content);
+    realtime.lastPingTime = 0;
+    realtime.pingSchedule =
+        schedule(realtime, function () { sendPing(realtime); }, realtime.pingCycle);
+};
+
 var create = ChainPad.create = function (userName, authToken, channelId, initialState, config) {
 
     var realtime = {
@@ -183,7 +206,16 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
         initialMessage: null,
 
         userListChangeHandlers: [],
-        userList: []
+        userList: [],
+
+        /** The schedule() for sending pings. */
+        pingSchedule: undefined,
+
+        lastPingLag: 0,
+        lastPingTime: 0,
+
+        /** Average number of milliseconds between pings. */
+        pingCycle: 5000
     };
 
     if (Common.PARANOIA) {
@@ -351,12 +383,18 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (msg.messageType === Message.REGISTER_ACK) {
         debug(realtime, "registered");
         realtime.registered = true;
+        sendPing(realtime);
         return;
     }
 
     if (msg.messageType === Message.REGISTER) {
         realtime.userList.push(msg.userName);
         userListChange(realtime);
+        return;
+    }
+
+    if (msg.messageType === Message.PONG) {
+        onPong(realtime, msg);
         return;
     }
 
@@ -577,6 +615,12 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
         onUserListChange: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.userListChangeHandlers.push(handler);
-        })
+        }),
+        getLag: function () {
+            if (realtime.lastPingTime) {
+                return { waiting:1, lag: (new Date()).getTime() - realtime.lastPingTime };
+            }
+            return { waiting:0, lag: realtime.lastPingLag };
+        }
     };
 };
