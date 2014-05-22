@@ -8,6 +8,8 @@ edited, different types of editors can exist in harmony on the same system.
 
 Issues: http://jira.xwiki.org/browse/RTCHAINPAD
 
+License: GNU AGPLv3.0 or at your option, any later version.
+
 ## Getting Started
 
 To embed ChainPad in your web application, it is recommended that you use the contained node.js
