@@ -16,6 +16,7 @@
  */
 var Common = require('./Common');
 var Operation = require('./Operation');
+var nThen = require('nthen');
 
 var applyReversibility = function () {
     var doc = Common.randomASCII(Math.floor(Math.random() * 2000));
@@ -41,17 +42,19 @@ var applyReversibility = function () {
     Common.assert(doc === docx);
 };
 
-var applyReversibilityMany = function () {
-    for (var i = 0; i < 100; i++) {
+var applyReversibilityMany = function (cycles, callback) {
+    for (var i = 0; i < 100 * cycles; i++) {
         applyReversibility();
     }
+    callback();
 };
 
-var toObjectFromObject = function () {
-    for (var i = 0; i < 100; i++) {
+var toObjectFromObject = function (cycles, callback) {
+    for (var i = 0; i < 100 * cycles; i++) {
         var op = Operation.random(Math.floor(Math.random() * 2000)+1);
         Common.assert(JSON.stringify(op) === JSON.stringify(Operation.fromObj(Operation.toObj(op))));
     }
+    callback();
 };
 
 var mergeOne = function () {
@@ -78,14 +81,15 @@ var mergeOne = function () {
         }
     }
 };
-var merge = function () {
-    for (var i = 0; i  < 1000; i++) {
+var merge = function (cycles, callback) {
+    for (var i = 0; i  < 1000 * cycles; i++) {
         mergeOne();
     }
+    callback();
 };
 
-var simplify = function () {
-    for (var i = 0; i  < 1000; i++) {
+var simplify = function (cycles, callback) {
+    for (var i = 0; i  < 1000 * cycles; i++) {
         // use a very short document to cause lots of common patches.
         var docA = Common.randomASCII(Math.floor(Math.random() * 8)+1);
         var opAB = Operation.random(docA.length);
@@ -102,12 +106,17 @@ var simplify = function () {
         }
         Common.assert(sdocB === docB);
     }
+    callback();
 };
 
-var main = function () {
-    simplify();
-    applyReversibilityMany();
-    toObjectFromObject();
-    merge();
+var main = module.exports.main = function (cycles, callback) {
+    nThen(function (waitFor) {
+        simplify(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        applyReversibilityMany(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        toObjectFromObject(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        merge(cycles, waitFor());
+    }).nThen(callback);
 };
-main();

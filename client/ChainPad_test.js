@@ -18,10 +18,12 @@ var ChainPad = require('./ChainPad');
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Sha = require('./SHA256');
+var nThen = require('nthen');
 
-var startup = function () {
+var startup = function (callback) {
     var rt = ChainPad.create('x','y','abc','abc');
     rt.abort();
+    callback();
 };
 
 var runOperation = function (realtimeFacade, op) {
@@ -46,7 +48,7 @@ var registerNode = function (name, initialDoc) {
     onMsg = rt.onMessage;
     var handlers = [];
     onMsg(function (msg) {
-        process.nextTick(function () {
+        setTimeout(function () {
             if (msg === ('1:y' + name.length + ':' + name + '3:abc3:[0]')) {
                 // registration
                 rt.message('0:3:abc3:[1]');
@@ -67,7 +69,7 @@ var registerNode = function (name, initialDoc) {
     return rt;
 };
 
-var editing = function () {
+var editing = function (callback) {
     var doc = '';
     var rt = registerNode('editing()', '');
     var messages = 0;
@@ -86,6 +88,7 @@ var editing = function () {
                 rt.sync();
                 if (m === messages) {
                     rt.abort();
+                    callback();
                     return;
                 }
             }
@@ -102,8 +105,8 @@ var editing = function () {
 
 var fakeSetTimeout = function (func, time) {
     var i = time;
-    var tick = function () { if (i-- <= 0) { func() } else { process.nextTick(tick); } };
-    process.nextTick(tick);
+    var tick = function () { if (i-- <= 0) { func() } else { setTimeout(tick); } };
+    setTimeout(tick);
 };
 
 var twoClientsCycle = function (callback, origDocA, origDocB) {
@@ -151,7 +154,7 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
                     callback();
                     return;
                 } else {
-                    process.nextTick(again);
+                    setTimeout(again);
                 }
             };
             again();
@@ -172,10 +175,10 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
 
 };
 
-var twoClients = function () {
+var twoClients = function (cycles, callback) {
     var i = 0;
     var again = function () {
-        if (i++ >= 1) { return; }
+        if (++i >= cycles) { again = callback; }
         var docA = Common.randomASCII(Math.floor(Math.random()*20));
         var docB = Common.randomASCII(Math.floor(Math.random()*20));
         twoClientsCycle(again, docA, docB);
@@ -195,7 +198,7 @@ var syncCycle = function (messages, finalDoc, name, callback) {
     });
 };
 
-var outOfOrderSync = function () {
+var outOfOrderSync = function (callback) {
     var messages = [];
     var rtA = registerNode('outOfOrderSync()', '');
     rtA.onMessage(function (msg) {
@@ -209,7 +212,10 @@ var outOfOrderSync = function () {
         rtA.abort();
         var i = 0;
         var cycle = function () {
-            if (i++ > 10) { return; }
+            if (i++ > 10) {
+                callback();
+                return;
+            }
             // first sync is in order
             syncCycle(messages, rtA.doc, 'outOfOrderSync(rt'+i+')', function () {
                 for (var j = 0; j < messages.length; j++) {
@@ -225,7 +231,7 @@ var outOfOrderSync = function () {
     };
 
     var again = function () {
-        process.nextTick( (i++ < 150) ? again : finish );
+        setTimeout( (i++ < 150) ? again : finish );
         if (i < 100) {
             var op = Operation.random(rtA.doc.length);
             rtA.doc = Operation.apply(op, rtA.doc);
@@ -236,10 +242,14 @@ var outOfOrderSync = function () {
     again();
 };
 
-var main = function () {
-    startup();
-    editing();
-    twoClients();
-    outOfOrderSync();
+var main = module.exports.main = function (cycles, callback) {
+    nThen(function (waitFor) {
+        startup(waitFor());
+    }).nThen(function (waitFor) {
+        editing(waitFor());
+    }).nThen(function (waitFor) {
+        twoClients(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        outOfOrderSync(waitFor());
+    }).nThen(callback);
 };
-main();

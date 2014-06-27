@@ -239,8 +239,7 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
         return realtime;
     }
 
-    var initialOp = Operation.create();
-    initialOp.toInsert = initialState;
+    var initialOp = Operation.create(0, 0, initialState);
     var initialStatePatch = Patch.create(zeroPatch.inverseOf.parentHash);
     Patch.addOperation(initialStatePatch, initialOp);
     initialStatePatch.inverseOf = Patch.invert(initialStatePatch, '');
@@ -449,7 +448,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         var pcMsg = parentCount(realtime, msg);
         if (pcBest < pcMsg
           || (pcBest === pcMsg
-            && Common.compareHashes(realtime.best.hashOf, msg.hashOf) > 0))
+            && Common.strcmp(realtime.best.hashOf, msg.hashOf) > 0))
         {
             // switch chains
             while (commonAncestor && !isAncestorOf(realtime, commonAncestor, msg)) {
@@ -584,16 +583,10 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
             });
         }),
         remove: enterChainPad(realtime, function (offset, numChars) {
-            var op = Operation.create();
-            op.offset = offset;
-            op.toRemove = numChars;
-            doOperation(realtime, op);
+            doOperation(realtime, Operation.create(offset, numChars, ''));
         }),
         insert: enterChainPad(realtime, function (offset, str) {
-            var op = Operation.create();
-            op.offset = offset;
-            op.toInsert = str;
-            doOperation(realtime, op);
+            doOperation(realtime, Operation.create(offset, 0, str));
         }),
         onMessage: enterChainPad(realtime, function (handler) {
             realtime.onMessage = handler;

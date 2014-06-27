@@ -3,6 +3,8 @@
   "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
   "version": "0.1.0",
   "dependencies": {
-    "gluejs": "~2.3.5"
+    "gluejs": "~2.3.5",
+    "xmhell": "~0.1.2",
+    "nthen": "~0.1.1"
   }
 }

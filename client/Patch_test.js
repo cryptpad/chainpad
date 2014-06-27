@@ -18,9 +18,9 @@ var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
 var Sha = require('./SHA256');
+var nThen = require('nthen');
 
-// These are fuzz tests so increasing these numbers might catch more errors.
-var CYCLES = 100;
+// These are fuzz tests so increasing this number might catch more errors.
 var OPERATIONS = 1000;
 
 var addOperationConst = function (origDoc, expectedDoc, operations) {
@@ -60,41 +60,44 @@ var addOperationCycle = function () {
     };
 };
 
-var addOperation = function () {
+var addOperation = function (cycles, callback) {
 
     var opsLen = 0;
     var patchOpsLen = 0;
-    for (var i = 0; i < CYCLES; i++) {
+    for (var i = 0; i < 100 * cycles; i++) {
         var out = addOperationCycle();
         opsLen += out.operations.length;
         patchOpsLen += out.patchOps.length;
     }
     var mcr = Math.floor((opsLen / patchOpsLen) * 1000) / 1000;
     console.log("Merge compression ratio: " + mcr + ":1");
+    callback();
 };
 
-var toObjectFromObject = function () {
-    for (var i = 0; i < CYCLES; i++) {
+var toObjectFromObject = function (cycles, callback) {
+    for (var i = 0; i < cycles * 100; i++) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 100)+1);
         var patch = Patch.random(docA);
         var patchObj = Patch.toObj(patch);
         var patchB = Patch.fromObj(patchObj);
         Common.assert(JSON.stringify(patch) === JSON.stringify(patchB));
     }
+    callback();
 };
 
-var applyReversibility = function () {
-    for (var i = 0; i < CYCLES; i++) {
+var applyReversibility = function (cycles, callback) {
+    for (var i = 0; i < cycles * 100; i++) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 2000));
         var patch = Patch.random(docA);
         var docB = Patch.apply(patch, docA);
         var docAA = Patch.apply(Patch.invert(patch, docA), docB);
         Common.assert(docAA === docA);
     }
+    callback();
 };
 
-var merge = function () {
-    for (var i = 0; i < CYCLES; i++) {
+var merge = function (cycles, callback) {
+    for (var i = 0; i < cycles * 100; i++) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 5000)+1);
         var patchAB = Patch.random(docA);
         var docB = Patch.apply(patchAB, docA);
@@ -104,72 +107,77 @@ var merge = function () {
         var docC2 = Patch.apply(patchAC, docA);
         Common.assert(docC === docC2);
     }
+    callback();
 };
 
-Patch.transform(
-  {
-    "type": "Patch",
-    "operations": [
+var transformStatic = function () {
+    Patch.transform(
       {
-        "type": "Operation",
-        "offset": 4,
-        "toRemove": 63,
-        "toInsert": "VAPN]Z[bwdn\\OvP"
+        "type": "Patch",
+        "operations": [
+          {
+            "type": "Operation",
+            "offset": 4,
+            "toRemove": 63,
+            "toInsert": "VAPN]Z[bwdn\\OvP"
+          },
+          {
+            "type": "Operation",
+            "offset": 88,
+            "toRemove": 2,
+            "toInsert": ""
+          }
+        ],
+        "parentHash": "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235"
       },
       {
-        "type": "Operation",
-        "offset": 88,
-        "toRemove": 2,
-        "toInsert": ""
-      }
-    ],
-    "parentHash": "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235"
-  },
-  {
-    "type": "Patch",
-    "operations": [
-      {
-        "type": "Operation",
-        "offset": 0,
-        "toRemove": 92,
-        "toInsert": "[[fWjLRmIVZV[BiG^IHqDGmCuooPE"
-      }
-    ],
-    "parentHash": "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235"
-  },
-  "_VMsPV\\PNXjQiEoTdoUHYxZALnDjB]onfiN[dBP[vqeGJJZ\\vNaQ`\\Y_jHNnrHOoFN^UWrWjCKoKeD[`nosFrM`EpY\\Ib"
-);
+        "type": "Patch",
+        "operations": [
+          {
+            "type": "Operation",
+            "offset": 0,
+            "toRemove": 92,
+            "toInsert": "[[fWjLRmIVZV[BiG^IHqDGmCuooPE"
+          }
+        ],
+        "parentHash": "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235"
+      },
+      "_VMsPV\\PNXjQiEoTdoUHYxZALnDjB]onfiN[dBP[vqeGJJZ\\vNaQ`\\Y_jHNnrHOoFN^UWrWjCKoKe" +
+          "D[`nosFrM`EpY\\Ib"
+    );
 
-Patch.transform(
-  {
-    "type": "Patch",
-    "operations": [
+    Patch.transform(
       {
-        "type": "Operation",
-        "offset": 10,
-        "toRemove": 5,
-        "toInsert": ""
-      }
-    ],
-    "parentHash": "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4"
-  },
-  {
-    "type": "Patch",
-    "operations": [
+        "type": "Patch",
+        "operations": [
+          {
+            "type": "Operation",
+            "offset": 10,
+            "toRemove": 5,
+            "toInsert": ""
+          }
+        ],
+        "parentHash": "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4"
+      },
       {
-        "type": "Operation",
-        "offset": 10,
-        "toRemove": 5,
-        "toInsert": ""
-      }
-    ],
-    "parentHash": "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4"
-  },
-  "SofyheYQWsva[NLAGkB"
-);
+        "type": "Patch",
+        "operations": [
+          {
+            "type": "Operation",
+            "offset": 10,
+            "toRemove": 5,
+            "toInsert": ""
+          }
+        ],
+        "parentHash": "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4"
+      },
+      "SofyheYQWsva[NLAGkB"
+    );
+};
 
-var transform = function () {
-    for (var i = 0; i < CYCLES; i++) {
+var transform = function (cycles, callback) {
+    transformStatic();
+    for (var i = 0; i < 100 * cycles; i++) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 100)+1);
         var patchAB = Patch.random(docA);
         var patchAC = Patch.random(docA);
@@ -177,10 +185,11 @@ var transform = function () {
         var docB = Patch.apply(patchAB, docA);
         Patch.apply(patchBC, docB);
     }
+    callback();
 };
 
-var simplify = function () {
-    for (var i = 0; i  < CYCLES; i++) {
+var simplify = function (cycles, callback) {
+    for (var i = 0; i  < 100 * cycles; i++) {
         // use a very short document to cause lots of common patches.
         var docA = Common.randomASCII(Math.floor(Math.random() * 50)+1);
         var patchAB = Patch.random(docA);
@@ -189,14 +198,21 @@ var simplify = function () {
         var sdocB = Patch.apply(spatchAB, docA);
         Common.assert(sdocB === docB);
     }
+    callback();
 };
 
-var main = function () {
-    simplify();
-    transform();
-    addOperation();
-    toObjectFromObject();
-    applyReversibility();
-    merge();
+var main = module.exports.main = function (cycles, callback) {
+    nThen(function (waitFor) {
+        simplify(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        transform(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        addOperation(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        toObjectFromObject(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        applyReversibility(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        merge(cycles, waitFor());
+    }).nThen(callback);
 };
-main();

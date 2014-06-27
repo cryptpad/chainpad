@@ -226,13 +226,7 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc) {
             }
         }
         if (Common.PARANOIA && toTransform.operations[i]) {
-try {
             Operation.check(toTransform.operations[i], resultOfTransformBy.length);
-} catch (e) {
-console.log('transform('+JSON.stringify([origToTransform,transformBy,doc], null, '  ')+');');
-console.log(JSON.stringify(toTransform.operations[i]));
-throw e;
-}
         }
     }
     var out = create(transformBy.parentHash);

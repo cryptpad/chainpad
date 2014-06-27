@@ -16,15 +16,8 @@
  */
 var Common = require('./Common');
 
-var Operation = {};
-var create = Operation.create = function () {
-    return {
-        type: 'Operation',
-        offset: 0,
-        toRemove: 0,
-        toInsert: '',
-    };
-};
+var Operation = module.exports;
+
 var check = Operation.check = function (op, docLength_opt) {
     Common.assert(op.type === 'Operation');
     Common.assert(Common.isUint(op.offset));
@@ -34,6 +27,17 @@ var check = Operation.check = function (op, docLength_opt) {
     Common.assert(typeof(docLength_opt) !== 'number' || op.offset + op.toRemove <= docLength_opt);
 };
 
+var create = Operation.create = function (offset, toRemove, toInsert) {
+    var out = {
+        type: 'Operation',
+        offset: offset || 0,
+        toRemove: toRemove || 0,
+        toInsert: toInsert || '',
+    };
+    if (Common.PARANOIA) { check(out); }
+    return out;
+};
+
 var toObj = Operation.toObj = function (op) {
     if (Common.PARANOIA) { check(op); }
     return [op.offset,op.toRemove,op.toInsert];
@@ -41,21 +45,11 @@ var toObj = Operation.toObj = function (op) {
 
 var fromObj = Operation.fromObj = function (obj) {
     Common.assert(Array.isArray(obj) && obj.length === 3);
-    var op = create();
-    op.offset = obj[0];
-    op.toRemove = obj[1];
-    op.toInsert = obj[2];
-    if (Common.PARANOIA) { check(op); }
-    return op;
+    return create(obj[0], obj[1], obj[2]);
 };
 
 var clone = Operation.clone = function (op) {
-    if (Common.PARANOIA) { check(op); }
-    var out = create();
-    out.offset = op.offset;
-    out.toRemove = op.toRemove;
-    out.toInsert = op.toInsert;
-    return out;
+    return create(op.offset, op.toRemove, op.toInsert);
 };
 
 /**
@@ -217,17 +211,12 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
  * has to be lossy because both operations have the same base and they diverge.
  * This could be made nicer and/or tailored to a specific data type.
  *
- * @param toTransform the operation which is converted, MUTATED
+ * @param toTransform the operation which is converted *MUTATED*.
  * @param transformBy an existing operation which also has the same base.
- * @return nothing, input is mutated
+ * @return toTransform *or* null if the result is a no-op.
  */
-var transform = Operation.transform = function (toTransform, transformBy) {
-    if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
-    }
+var transform0 = Operation.transform0 = function (toTransform, transformBy) {
     if (toTransform.offset > transformBy.offset) {
-        toTransform = clone(toTransform);
         if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
             // simple rebase
             toTransform.offset -= transformBy.toRemove;
@@ -247,7 +236,6 @@ var transform = Operation.transform = function (toTransform, transformBy) {
     if (toTransform.offset + toTransform.toRemove < transformBy.offset) {
         return toTransform;
     }
-    toTransform = clone(toTransform);
     toTransform.toRemove = transformBy.offset - toTransform.offset;
     if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
         return null;
@@ -255,17 +243,30 @@ var transform = Operation.transform = function (toTransform, transformBy) {
     return toTransform;
 };
 
+/**
+ * @param toTransform the operation which is converted
+ * @param transformBy an existing operation which also has the same base.
+ * @return a modified clone of toTransform *or* toTransform itself if no change was made.
+ */
+var transform = Operation.transform = function (toTransform, transformBy) {
+    if (Common.PARANOIA) {
+        check(toTransform);
+        check(transformBy);
+    }
+    toTransform = clone(toTransform);
+    var result = Operation.transform0(toTransform, transformBy)
+    if (Common.PARANOIA && result) { check(result); }
+    return result;
+};
+
 /** Used for testing. */
 var random = Operation.random = function (docLength) {
     Common.assert(Common.isUint(docLength));
-    var op = create();
-    op.offset = Math.floor(Math.random() * 100000000 % docLength) || 0;
-    op.toRemove = Math.floor(Math.random() * 100000000 % (docLength - op.offset)) || 0;
+    var offset = Math.floor(Math.random() * 100000000 % docLength) || 0;
+    var toRemove = Math.floor(Math.random() * 100000000 % (docLength - offset)) || 0;
+    var toInsert = '';
     do {
-        op.toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
-    } while (op.toRemove === 0 && op.toInsert === '');
-    if (Common.PARANOIA) { check(op); }
-    return op;
+        var toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
+    } while (toRemove === 0 && toInsert === '');
+    return create(offset, toRemove, toInsert);
 };
-
-module.exports = Operation;

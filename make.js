@@ -16,20 +16,65 @@
  */
 var Glue = require('gluejs');
 var Fs = require('fs');
+var nThen = require('nthen');
 
-var g = new Glue();
-g.basepath('./client');
-g.main('ChainPad.js');
-g.include('./');
+(function buildChainpad() {
+    var g = new Glue();
+    g.basepath('./client');
+    g.main('ChainPad.js');
+    g.include('./ChainPad.js');
+    g.include('./Message.js');
+    g.include('./SHA256.js');
+    g.include('./Common.js');
+    g.include('./Patch.js');
+    g.include('./Operation.js');
 
-// excludes .test.js
-g.exclude(new RegExp('.+\\_test\\.js'));
+    g.export('ChainPad');
+    //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
+    g.render(Fs.createWriteStream('./chainpad.js'));
+})();
 
-g.export('ChainPad');
-//g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
-g.render(Fs.createWriteStream('./chainpad.js'));
+(function buildOtaml() {
+    var g = new Glue();
+    g.basepath('./client');
+    g.main('Otaml.js');
+    g.include('./Otaml.js');
+    g.include('./SHA256.js');
+    g.include('./Common.js');
+    g.include('./Operation.js');
+    g.include('./HtmlParse.js');
 
-require('./client/Operation_test');
-require('./client/Patch_test');
-require('./client/ChainPad_test');
-console.log("Tests passed.");
+    g.export('Otaml');
+    //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
+    g.render(Fs.createWriteStream('./otaml.js'));
+})();
+
+
+
+var cycles = 1;
+if (process.argv.indexOf('--cycles') !== -1) {
+    cycles = process.argv[process.argv.indexOf('--cycles')+1];
+    console.log("Running [" + cycles + "] test cycles");
+}
+
+var nt = nThen;
+nThen(function (waitFor) {
+    ['./client/'].forEach(function (path) {
+        Fs.readdir(path, waitFor(function (err, ret) {
+            if (err) { throw err; }
+            ret.forEach(function (file) {
+               if (/_test\.js/.test(file)) {
+                   nt = nt(function (waitFor) {
+                       var test = require(path + file);
+                       console.log("Running Test " + path + file);
+                       test.main(cycles, waitFor());
+                   }).nThen;
+               }
+            });
+        }));
+    });
+}).nThen(function (waitFor) {
+    nt(waitFor());
+}).nThen(function (waitFor) {
+    console.log("Tests passed.");
+});
