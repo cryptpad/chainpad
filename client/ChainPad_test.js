@@ -99,7 +99,7 @@ var editing = function (callback) {
         doc = Operation.apply(op, doc);
         runOperation(rt, op);
         rt.sync();
-    });
+    },1);
 
 };
 
@@ -171,7 +171,7 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
         if (Math.random() > 0.8) {
             rt.sync();
         }
-    });
+    },1);
 
 };
 
@@ -191,7 +191,7 @@ var syncCycle = function (messages, finalDoc, name, callback) {
     for (var i = 0; i < messages.length; i++) {
         rt.message(messages[i]);
     }
-    process.nextTick(function () {
+    setTimeout(function () {
         Common.assert(rt.doc === finalDoc);
         rt.abort();
         callback();

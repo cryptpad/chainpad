@@ -215,7 +215,7 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
  * @param transformBy an existing operation which also has the same base.
  * @return toTransform *or* null if the result is a no-op.
  */
-var transform0 = Operation.transform0 = function (toTransform, transformBy) {
+var transform0 = Operation.transform0 = function (text, toTransform, transformBy) {
     if (toTransform.offset > transformBy.offset) {
         if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
             // simple rebase
@@ -248,13 +248,14 @@ var transform0 = Operation.transform0 = function (toTransform, transformBy) {
  * @param transformBy an existing operation which also has the same base.
  * @return a modified clone of toTransform *or* toTransform itself if no change was made.
  */
-var transform = Operation.transform = function (toTransform, transformBy) {
+var transform = Operation.transform = function (text, toTransform, transformBy, transformFunction) {
     if (Common.PARANOIA) {
         check(toTransform);
         check(transformBy);
     }
+    transformFunction = transformFunction || transform0;
     toTransform = clone(toTransform);
-    var result = Operation.transform0(toTransform, transformBy)
+    var result = transformFunction(text, toTransform, transformBy);
     if (Common.PARANOIA && result) { check(result); }
     return result;
 };

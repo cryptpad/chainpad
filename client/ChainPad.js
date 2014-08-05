@@ -341,7 +341,9 @@ var applyPatch = function (realtime, author, patch) {
         realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
 
     } else {
-        realtime.uncommitted = Patch.transform(realtime.uncommitted, patch, realtime.authDoc);
+        realtime.uncommitted =
+            Patch.transform(
+                realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
     }
     realtime.uncommitted.parentHash = patch.inverseOf.parentHash;
 

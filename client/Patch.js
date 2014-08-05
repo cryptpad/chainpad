@@ -207,7 +207,7 @@ var equals = Patch.equals = function (patchA, patchB) {
     return true;
 };
 
-var transform = Patch.transform = function (origToTransform, transformBy, doc) {
+var transform = Patch.transform = function (origToTransform, transformBy, doc, transformFunction) {
     if (Common.PARANOIA) {
         check(origToTransform, doc.length);
         check(transformBy, doc.length);
@@ -217,10 +217,14 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc) {
     var resultOfTransformBy = apply(transformBy, doc);
 
     toTransform = clone(origToTransform);
+    var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        text = Operation.apply(toTransform.operations[i], text);
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            toTransform.operations[i] =
-                Operation.transform(toTransform.operations[i], transformBy.operations[j]);
+            toTransform.operations[i] = Operation.transform(text,
+                                                            toTransform.operations[i],
+                                                            transformBy.operations[j],
+                                                            transformFunction);
             if (!toTransform.operations[i]) {
                 break;
             }
@@ -242,7 +246,7 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc) {
         check(out, resultOfTransformBy.length);
     }
     return out;
-}
+};
 
 var random = Patch.random = function (doc, opCount) {
     Common.assert(typeof(doc) === 'string');

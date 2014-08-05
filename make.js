@@ -17,6 +17,7 @@
 var Glue = require('gluejs');
 var Fs = require('fs');
 var nThen = require('nthen');
+var Os = require('os');
 
 (function buildChainpad() {
     var g = new Glue();
@@ -57,24 +58,38 @@ if (process.argv.indexOf('--cycles') !== -1) {
     console.log("Running [" + cycles + "] test cycles");
 }
 
-var nt = nThen;
+var tests = [];
+var timeOne = new Date().getTime();
+
 nThen(function (waitFor) {
-    ['./client/'].forEach(function (path) {
-        Fs.readdir(path, waitFor(function (err, ret) {
-            if (err) { throw err; }
-            ret.forEach(function (file) {
-               if (/_test\.js/.test(file)) {
-                   nt = nt(function (waitFor) {
-                       var test = require(path + file);
-                       console.log("Running Test " + path + file);
-                       test.main(cycles, waitFor());
-                   }).nThen;
-               }
-            });
-        }));
-    });
-}).nThen(function (waitFor) {
-    nt(waitFor());
+    var nt = nThen;
+    Fs.readdir('./client/', waitFor(function (err, ret) {
+        if (err) { throw err; }
+        ret.forEach(function (file) {
+           if (/_test\.js/.test(file)) {
+               nt = nt(function (waitFor) {
+                   tests.push(file);
+                   var test = require('./client/' + file);
+                   console.log("Running Test " + file);
+                   test.main(cycles, waitFor());
+               }).nThen;
+           }
+        });
+        nt(waitFor());
+    }));
 }).nThen(function (waitFor) {
     console.log("Tests passed.");
+    console.log('in ' + (new Date().getTime() - timeOne));
+}).nThen(function (waitFor) {
+
+    var g = new Glue();
+    g.basepath('./client');
+    g.main('AllTests.js');
+    g.include('./');
+    g.include('../node_modules/nthen/lib/nthen.js');
+    g.remap('testNames', JSON.stringify(tests));
+    g.export('AllTests');
+    //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
+    g.render(Fs.createWriteStream('./alltests.js'));
+
 });

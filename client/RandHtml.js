@@ -16,8 +16,7 @@
  */
 var Elements = require('./Elements');
 var ValidateHtml = require('./ValidateHtml');
-var Crypto = require('crypto');
-
+var Sha = require('./SHA256');
 
 var CHANCE_MAX = (1<<24);
 
@@ -67,7 +66,7 @@ var charToNum = function (chr) {
 
 var rotl = function (x,b) { return ((x << b) & 0x7fffffff) | (x >>> (32 - b)); }
 var mix = function (a,b) {
-    out = Number('0x' + Crypto.createHash('sha256').update(a + '' + b).digest('hex').substring(0,7));
+    out = Number('0x' + Sha.hex_sha256(a + '' + b).substring(0,7));
     return out % CHANCE_MAX;
 };
 var coinFlip = function (seed, chance, num) {
