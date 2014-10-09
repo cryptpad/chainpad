@@ -15,7 +15,6 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 var Elements = require('./Elements');
-var ValidateHtml = require('./ValidateHtml');
 var Sha = require('./SHA256');
 
 var CHANCE_MAX = (1<<24);
@@ -102,11 +101,11 @@ var addAttributes = function (getChars, out) {
     }
 };
 
-var addHTML = function (getChars, out) {
+var addHTML = function (getChars, out, inDiv) {
     var tagStack = [];
-    var currentTag = 'html';
+    var currentTag = (inDiv) ? 'div' : 'html';
     var elems = Elements[currentTag];
-    out.push('<html>\n');
+    out.push('<' + currentTag + '>\n');
     for (var chr = getChars(1); chr; chr = getChars(1)) {
         var num = charToNum(chr);
         if (coinFlip(1, OPEN_TAG_CHANCE, num)) {
@@ -168,12 +167,12 @@ var alterText = module.exports.alterText = function (text, maxCharsToAlter) {
     return text.substring(0, offset) + toInsert + text.substring(offset + toDelete);
 };
 
-var textToHtml = module.exports.textToHtml = function (text) {
+var textToHtml = module.exports.textToHtml = function (text, inDiv) {
     var index = 0;
     var out = [];
     addHTML(function (count) {
         index += count;
         return text.substring(index-count, index);
-    }, out);
+    }, out, inDiv);
     return out.join('');
 };

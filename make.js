@@ -50,7 +50,18 @@ var Os = require('os');
     g.render(Fs.createWriteStream('./otaml.js'));
 })();
 
+(function buildRandHtml() {
+    var g = new Glue();
+    g.basepath('./client');
+    g.main('RandHtml.js');
+    g.include('RandHtml.js');
+    g.include('./SHA256.js');
+    g.include('./Elements.js');
 
+    g.export('RandHtml');
+    //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
+    g.render(Fs.createWriteStream('./randhtml.js'));
+})();
 
 var cycles = 1;
 if (process.argv.indexOf('--cycles') !== -1) {

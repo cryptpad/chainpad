@@ -19,25 +19,6 @@ var ValidateHtml = require('./ValidateHtml');
 var RandHtml = require('./RandHtml');
 var Operation = require('./Operation');
 
-var makeTextOperation = function(oldval, newval) {
-    if (oldval === newval) { return; }
-
-    var begin = 0;
-    for (; oldval[begin] === newval[begin]; begin++) ;
-
-    var end = 0;
-    for (var oldI = oldval.length, newI = newval.length;
-         oldval[--oldI] === newval[--newI];
-         end++) ;
-
-    if (end >= oldval.length - begin) { end = oldval.length - begin; }
-    if (end >= newval.length - begin) { end = newval.length - begin; }
-
-    return Operation.create(begin,
-                            oldval.length - begin - end,
-                            newval.slice(begin, newval.length - end));
-};
-
 var displayOp = function (stateA, op) {
     var toRemove = stateA.substr(op.offset, op.toRemove).replace(/\n/g, '\\n');
     var toInsert = op.toInsert.replace(/\n/g, '\\n');
@@ -59,7 +40,7 @@ var cycle = function () {
     var htmlA = RandHtml.textToHtml(text);
 
     var htmlB = RandHtml.textToHtml(RandHtml.alterText(text, 10));
-    var opAB = makeTextOperation(htmlA, htmlB);
+    var opAB = Otaml.makeTextOperation(htmlA, htmlB);
 
     // It's possible that there is actually no difference, just continue in that case.
     if (!opAB) { return; }
@@ -70,7 +51,7 @@ var cycle = function () {
     for (var i = 0; i < 100; i++) {
 
         var htmlC = RandHtml.textToHtml(RandHtml.alterText(text, 10));
-        var opAC = makeTextOperation(htmlA, htmlC);
+        var opAC = Otaml.makeTextOperation(htmlA, htmlC);
 
         if (!opAC) { continue; }
 
@@ -109,8 +90,41 @@ var cycle = function () {
     }
 };
 
+var testMakeHTMLOperation = function () {
+    var oldval = [
+        '&lt;wxw&lt;w&lt;xjsssssshsshygbqsdqsdqsdsdjsdccssdcssdsdcsdc<p><br></p><p>sdcc<br></p><ul>',
+        '<li><table style="font-family: sans-serif; font-size: 14px;"><thead><tr><th>j&nbsp;</th><t',
+        'h>j qcsdcqscqsd</th></tr></thead><tbody><tr><td>&nbsp;qx&lt;w&lt;x&lt;ww&lt;sds</td><td>&n',
+        'bsp;<strong><em><ins>qqsdcqddqdss</ins></em></strong></td></tr></tbody></table><br></li><l',
+        'i>sxssx&lt;sxq&lt;&lt;wxw&lt;&lt;wxw<br></li></ul>w&lt;xsxqs<br><ol><li><h3>ssxsxqxsqfg</h',
+        '3></li><li>LHJMKh</li><li>qslcnqsdbm</li><li>q,cpqsf<span style="font-size: 1.61em; line-h',
+        'eight: 1.2em;">vbjjjjjqsccqsdcxqdjhkqdcddckdcqqjkcd jnopejzadhhhj</span></li></ol><p>hjjhh',
+        'ggghgg I\'m here and it seems the cursjhklor is ssdssdsdso<br></p><table><thead><tr><th>jh',
+        'klhjkl&nbsp;</th><th>&nbsp;hh</th></tr></thead><tbody><tr><td>&nbsp;g</td><td>scdsqxdqsxsq',
+        'xcqdscdqs <br></td></tr></tbody></table><strong>vbdazadzscc</strong> s<br><p>qsxdqsjjighug',
+        'ggggihjccsd</p><p>qsxqs</p><p>sxxqss<br></p>'
+    ].join('');
+
+    var newval = [
+        '&lt;wxw&lt;w&lt;xjsssssshsshygbqsdqsdqsdsdjsdccssdcssdsdcsdc<p><br></p><p>sdcc<br></p><ul>',
+        '<li><table style="font-family: sans-serif; font-size: 14px;"><thead><tr><th>j&nbsp;</th><t',
+        'h>j qcsdcqscqsd</th></tr></thead><tbody><tr><td>&nbsp;qx&lt;w&lt;x&lt;ww&lt;sds</td><td>&n',
+        'bsp;<strong><em><ins>qqsdcqddqdss</ins></em></strong></td></tr></tbody></table><br></li><l',
+        'i>sxssx&lt;sxq&lt;&lt;wxw&lt;&lt;wxw<br></li></ul>w&lt;xsxqs<br><ol><li><h3>ssxsxqxsqfg</h',
+        '3></li><li>LHJMKh</li><li>qslcnqsdbm</li><li>q,cpqsfgj<span style="font-size: 1.61em; line',
+        '-height: 1.2em;">vbjjjjjqsccqsdcxqdjhkqdcddckdcqqjkcd jnopejzadhhhj</span></li></ol><p>hjj',
+        'hhggghgg I\'m here and it seems the cursjhklor is ssdssdsdso<br></p><table><thead><tr><th>',
+        'jhklhjkl&nbsp;</th><th>&nbsp;hh</th></tr></thead><tbody><tr><td>&nbsp;g</td><td>scdsqxdqsx',
+        'sqxcqdscdqs <br></td></tr></tbody></table><strong>vbdazadzscc</strong> s<br><p>qsxdqsjjigh',
+        'ugggggihjccsd</p><p>qsxqs</p><p>sxxqss<br></p>'
+    ].join('');
+
+    Otaml.makeHTMLOperation(oldval, newval);
+};
+
 var main = module.exports.main = function (cycles, callback) {
-    for (var i = 0; i < cycles * 100; i++) {
+    testMakeHTMLOperation();
+    for (var i = 0; i < cycles * 10; i++) {
         cycle();
     }
     callback();
