@@ -57,6 +57,18 @@ var unschedule = function (realtime, schedule) {
     clearTimeout(schedule);
 };
 
+var onMessage = function (realtime, message, callback) {
+    if (!realtime.messageHandlers.length) {
+        callback("no onMessage() handler registered");
+    }
+    for (var i = 0; i < realtime.messageHandlers.length; i++) {
+        realtime.messageHandlers[i](message, function () {
+            callback.apply(null, arguments);
+            callback = function () { };
+        });
+    }
+};
+
 var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
     if (realtime.syncSchedule) {
@@ -90,7 +102,7 @@ var sync = function (realtime) {
 
     var strMsg = Message.toString(msg);
 
-    realtime.onMessage(strMsg, function (err) {
+    onMessage(realtime, strMsg, function (err) {
         if (err) {
             debug(realtime, "Posting to server failed [" + err + "]");
         }
@@ -117,7 +129,6 @@ var sync = function (realtime) {
 };
 
 var getMessages = function (realtime) {
-    if (realtime.registered === true) { return; }
     realtime.registered = true;
     /*var to = schedule(realtime, function () {
         throw new Error("failed to connect to the server");
@@ -126,7 +137,7 @@ var getMessages = function (realtime) {
                              realtime.authToken,
                              realtime.channelId,
                              Message.REGISTER);
-    realtime.onMessage(Message.toString(msg), function (err) {
+    onMessage(realtime, Message.toString(msg), function (err) {
         if (err) { throw err; }
     });
 };
@@ -139,7 +150,7 @@ var sendPing = function (realtime) {
                              realtime.channelId,
                              Message.PING,
                              realtime.lastPingTime);
-    realtime.onMessage(Message.toString(msg), function (err) {
+    onMessage(realtime, Message.toString(msg), function (err) {
         if (err) { throw err; }
     });
 };
@@ -175,9 +186,7 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
         patchHandlers: [],
         opHandlers: [],
 
-        onMessage: function (message, callback) {
-            callback("no onMessage() handler registered");
-        },
+        messageHandlers: [],
 
         schedules: [],
 
@@ -401,6 +410,11 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     }
 
     if (msg.messageType === Message.DISCONNECT) {
+        if (msg.userName === '') {
+            realtime.userList = [];
+            userListChange(realtime);
+            return;
+        }
         var idx = realtime.userList.indexOf(msg.userName);
         if (Common.PARANOIA) { Common.assert(idx > -1); }
         if (idx > -1) {
@@ -547,14 +561,16 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         Common.assert(newUserInterfaceContent === realtime.userInterfaceContent);
     }
 
-    // push the uncommittedPatch out to the user interface.
-    for (var i = 0; i < realtime.patchHandlers.length; i++) {
-        realtime.patchHandlers[i](uncommittedPatch);
-    }
-    if (realtime.opHandlers.length) {
-        for (var i = uncommittedPatch.operations.length-1; i >= 0; i--) {
-            for (var j = 0; j < realtime.opHandlers.length; j++) {
-                realtime.opHandlers[j](uncommittedPatch.operations[i]);
+    if (uncommittedPatch.operations.length) {
+        // push the uncommittedPatch out to the user interface.
+        for (var i = 0; i < realtime.patchHandlers.length; i++) {
+            realtime.patchHandlers[i](uncommittedPatch);
+        }
+        if (realtime.opHandlers.length) {
+            for (var i = uncommittedPatch.operations.length-1; i >= 0; i--) {
+                for (var j = 0; j < realtime.opHandlers.length; j++) {
+                    realtime.opHandlers[j](uncommittedPatch.operations[i]);
+                }
             }
         }
     }
@@ -591,13 +607,15 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
             doOperation(realtime, Operation.create(offset, 0, str));
         }),
         onMessage: enterChainPad(realtime, function (handler) {
-            realtime.onMessage = handler;
+            Common.assert(typeof(handler) === 'function');
+            realtime.messageHandlers.push(handler);
         }),
         message: enterChainPad(realtime, function (message) {
             handleMessage(realtime, message);
         }),
         start: enterChainPad(realtime, function () {
             getMessages(realtime);
+            if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         }),
         abort: enterChainPad(realtime, function () {
