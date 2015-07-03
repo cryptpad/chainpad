@@ -1,6 +1,6 @@
 # ChainPad
 
-[![XWiki labs logo](https://raw.githubusercontent.com/xwiki-labs/xwiki-labs-logo/master/projects/xwikilabs/xlabs-project.png "XWiki labs")](https://labs.xwiki.com/xwiki/bin/view/Main/WebHome)
+[![XWiki labs logo](https://raw.githubusercontent.com/xwiki-labs/xwiki-labs-logo/master/projects/xwikilabs/xwikilabsproject.png "XWiki labs")](https://labs.xwiki.com/xwiki/bin/view/Projects/XWikiLabsProject)
 
 ChainPad Algorithm is a Realtime Collaborative Editor algorithm based on
 [Nakamoto Blockchains](https://en.bitcoin.it/wiki/Block_chain). This implementation is designed
