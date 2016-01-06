@@ -242,6 +242,43 @@ var outOfOrderSync = function (callback) {
     again();
 };
 
+var checkVersionInChain = function (callback) {
+    var doc = '';
+// create a chainpad
+    var rt = registerNode('editing()', '');
+    var messages = 0;
+    rt.onMessage(function (msg) {
+        messages++;
+        rt.message(msg);
+    });
+    rt.start();
+
+    var i = 0;
+    var oldUserDoc;
+    var to = setInterval(function () {
+// on the 51st change, grab the doc
+        if (i === 50) {
+            oldUserDoc = rt.getUserDoc();
+        }
+// on the 100th random change, check whether the 50th existed before
+        if (i++ > 100) {
+            clearTimeout(to);
+            Common.assert(rt.wasEverState(oldUserDoc));
+            Common.assert(rt.wasEverState(rt.getUserDoc()))
+            rt.abort();
+            callback();
+            return;
+        }
+
+        // fire off another operation
+        var op = Operation.random(doc.length);
+        doc = Operation.apply(op, doc);
+        runOperation(rt, op);
+        rt.sync();
+    },1);
+
+};
+
 var main = module.exports.main = function (cycles, callback) {
     nThen(function (waitFor) {
         startup(waitFor());
@@ -251,5 +288,7 @@ var main = module.exports.main = function (cycles, callback) {
         twoClients(cycles, waitFor());
     }).nThen(function (waitFor) {
         outOfOrderSync(waitFor());
+    }).nThen(function (waitFor) {
+        checkVersionInChain(waitFor);        
     }).nThen(callback);
 };
