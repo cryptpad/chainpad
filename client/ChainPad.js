@@ -577,6 +577,22 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
+var wasEverState = function (content, realtime) {
+    Common.assert(typeof(content) === 'string');
+    // without this we would never get true on the ^HEAD
+    if (realtime.authDoc === content) {
+        return true;
+    }
+
+    var hash = Sha.hex_sha256(content);
+
+    var patchMsg = realtime.best;
+    do {
+        if (patchMsg.content.parentHash === hash) { return true; }
+    } while ((patchMsg = getParent(realtime, patchMsg)));
+    return false;
+};
+
 module.exports.create = function (userName, authToken, channelId, initialState, conf) {
     Common.assert(typeof(userName) === 'string');
     Common.assert(typeof(authToken) === 'string');
@@ -635,6 +651,9 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
                 return { waiting:1, lag: (new Date()).getTime() - realtime.lastPingTime };
             }
             return { waiting:0, lag: realtime.lastPingLag };
+        },
+        wasEverState: function (content) {
+            return wasEverState(content, realtime);
         }
     };
 };
