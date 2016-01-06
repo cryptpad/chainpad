@@ -77,7 +77,7 @@ nThen(function (waitFor) {
     Fs.readdir('./client/', waitFor(function (err, ret) {
         if (err) { throw err; }
         ret.forEach(function (file) {
-           if (/_test\.js/.test(file)) {
+           if (/_test\.js$/.test(file)) {
                nt = nt(function (waitFor) {
                    tests.push(file);
                    var test = require('./client/' + file);
