@@ -593,6 +593,37 @@ var wasEverState = function (content, realtime) {
     return false;
 };
 
+var getDepthOfState = function (content, minDepth, realtime) {
+    Common.assert(typeof(content) === 'string');
+
+    // minimum depth is an optional argument which defaults to zero
+    var minDepth = minDepth || 0;
+
+    if (minDepth === 0 && realtime.authDoc === content) {
+        return 0;
+    }
+
+    var hash = Sha.hex_sha256(content);
+
+    var patchMsg = realtime.best;
+    var depth = 0;
+
+    do {
+        if (depth < minDepth) {
+            // you haven't exceeded the minimum depth
+        } else {
+            //console.log("Exceeded minimum depth");
+            // you *have* exceeded the minimum depth
+            if (patchMsg.content.parentHash === hash) {
+                // you found it!
+                return depth + 1;
+            }
+        }
+        depth++;
+    } while ((patchMsg = getParent(realtime, patchMsg)));
+    return;
+};
+
 module.exports.create = function (userName, authToken, channelId, initialState, conf) {
     Common.assert(typeof(userName) === 'string');
     Common.assert(typeof(authToken) === 'string');
@@ -654,6 +685,9 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
         },
         wasEverState: function (content) {
             return wasEverState(content, realtime);
+        },
+        getDepthOfState: function (content, minDepth) {
+            return getDepthOfState(content, minDepth, realtime);
         }
     };
 };
