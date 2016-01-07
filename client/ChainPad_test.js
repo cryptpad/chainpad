@@ -279,6 +279,66 @@ var checkVersionInChain = function (callback) {
 
 };
 
+var whichStateIsDeeper = function (callback) {
+// create a chainpad
+    var rt = registerNode('editing()', '');
+    var messages = 0;
+    rt.onMessage(function (msg) {
+        messages++;
+        rt.message(msg);
+    });
+    rt.start();
+
+    var doc = '',
+        docO = doc,
+        docA,
+        docB;
+
+    var i = 0;
+
+    var to = setInterval(function () {
+        if (i === 25) {
+            // grab docO
+            docO = rt.getUserDoc();
+        } else if (i === 50) {
+            // grab docA
+            docA = rt.getUserDoc();
+            console.log("Got Document A");
+            console.log(docA);
+
+            Common.assert(rt.getDepthOfState(docA) === 0);
+            Common.assert(rt.getDepthOfState(docO) === 25);
+        } else if (i === 75) {
+            // grab docB
+            docB = rt.getUserDoc();
+            console.log("Got Document B");
+            console.log(docB);
+
+            // state assertions
+            Common.assert(rt.getDepthOfState(docB) === 0);
+            Common.assert(rt.getDepthOfState(docA) === 25);
+            Common.assert(rt.getDepthOfState(docO) === 50);
+        } else if (i >= 100) {
+            // finish
+            clearTimeout(to);
+
+            Common.assert(rt.getDepthOfState(docB) === 25);
+            Common.assert(rt.getDepthOfState(docA) === 50);
+            Common.assert(rt.getDepthOfState(docO) === 75);
+
+            rt.abort();
+            callback();
+            return;
+        }
+
+        i++;
+        var op = Operation.random(doc.length);
+        doc = Operation.apply(op,doc);
+        runOperation(rt, op);
+        rt.sync();
+    },1);
+};
+
 var main = module.exports.main = function (cycles, callback) {
     nThen(function (waitFor) {
         startup(waitFor());
@@ -290,5 +350,7 @@ var main = module.exports.main = function (cycles, callback) {
         outOfOrderSync(waitFor());
     }).nThen(function (waitFor) {
         checkVersionInChain(waitFor);        
+    }).nThen(function (waitFor) {
+        whichStateIsDeeper(waitFor);
     }).nThen(callback);
 };
