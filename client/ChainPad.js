@@ -15,7 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 var Common = require('./Common');
-var Operation = require('./Operation');
+var Operation = module.exports.Operation = require('./Operation');
 var Patch = require('./Patch');
 var Message = require('./Message');
 var Sha = require('./SHA256');
