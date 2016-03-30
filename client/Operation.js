@@ -54,7 +54,7 @@ var clone = Operation.clone = function (op) {
 
 /**
  * @param op the operation to apply.
- * @param doc the content to apply the operation on 
+ * @param doc the content to apply the operation on
  */
 var apply = Operation.apply = function (op, doc)
 {
@@ -215,7 +215,13 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
  * @param transformBy an existing operation which also has the same base.
  * @return toTransform *or* null if the result is a no-op.
  */
-var transform0 = Operation.transform0 = function (text, toTransform, transformBy) {
+
+var transform0 = Operation.transform0 = function (text, toTransformOrig, transformByOrig) {
+    // Cloning the original transformations makes this algorithm such that it
+    // **DOES NOT MUTATE ANYMORE**
+    var toTransform = Operation.clone(toTransformOrig);
+    var transformBy = Operation.clone(transformByOrig);
+
     if (toTransform.offset > transformBy.offset) {
         if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
             // simple rebase
