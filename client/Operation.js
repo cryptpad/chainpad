@@ -217,6 +217,9 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
  */
 
 var transform0 = Operation.transform0 = function (text, toTransformOrig, transformByOrig) {
+    console.log("Applying Operational Transform");
+
+
     // Cloning the original transformations makes this algorithm such that it
     // **DOES NOT MUTATE ANYMORE**
     var toTransform = Operation.clone(toTransformOrig);

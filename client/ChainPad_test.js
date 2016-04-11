@@ -19,6 +19,7 @@ var Common = require('./Common');
 var Operation = require('./Operation');
 var Sha = require('./SHA256');
 var nThen = require('nthen');
+var TextPatcher = require('./text-patcher');
 
 var startup = function (callback) {
     var rt = ChainPad.create('x','y','abc','abc');
@@ -41,6 +42,11 @@ var insert = function (doc, offset, chars) {
 
 var remove = function (doc, offset, count) {
     return doc.substring(0,offset) + doc.substring(offset+count);
+};
+
+var runAttributeOperation = function (text, op) {
+    text = remove(text, op.offset, op.toRemove);
+    return insert(text, op.offset, op.toInsert);
 };
 
 var registerNode = function (name, initialDoc) {
@@ -115,7 +121,7 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
     rtA.queue = [];
     rtB.queue = [];
     var messages = 0;
-    
+
     var onMsg = function (rt, msg) {
         messages+=2;
         var m = msg.replace(/^1:y/, '');
@@ -198,6 +204,14 @@ var syncCycle = function (messages, finalDoc, name, callback) {
     });
 };
 
+/* QUESTION:
+    what does it mean if it prints 'not connected to root'?
+
+It's sending and receiving messages out of order, so we expect to have
+state which is not connected to root. Eventually it resolves, and so it
+doesn't fail. So this test is apparently correct.
+
+*/
 var outOfOrderSync = function (callback) {
     var messages = [];
     var rtA = registerNode('outOfOrderSync()', '');
@@ -339,18 +353,163 @@ var whichStateIsDeeper = function (callback) {
     },1);
 };
 
+var breakOT = function (cycles, callback) {
+    var i = 0;
+    var seed = function (n) { return Common.randomASCII(Math.floor(Math.random() * n)); };
+    var SEED_LENGTH = 50;
+    var again = function () {
+        if (++i >= cycles) { again = callback; }
+
+        var objA = JSON.stringify({
+            a: seed(SEED_LENGTH),
+            b: seed(SEED_LENGTH)
+        });
+
+        var objB = JSON.stringify({
+            a: seed(SEED_LENGTH),
+            b: seed(SEED_LENGTH)
+        });
+
+        console.log(objA);
+        console.log(objB);
+
+        breakOTTwoClientsCycle(again, objA, objB);
+    };
+    again();
+};
+
+
+var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
+    /* documents A and B are both valid JSON objects. */
+
+    var rtA = registerNode('breakOTTwoClients(rtA)', origDocA);
+    var rtB = registerNode('breakOTTwoClients(rtB)', origDocB);
+    rtA.queue = [];
+    rtB.queue = [];
+    var messages = 0;
+
+    var lastOperations = [];
+
+    var onMsg = function (rt, msg) {
+        messages+=2;
+        var m = msg.replace(/^1:y/, '');
+        fakeSetTimeout(function () {
+            messages--;
+            rtA.queue.push(m);
+            fakeSetTimeout(function () { rtA.message(rtA.queue.shift()); }, Math.random() * 100);
+        }, Math.random() * 100);
+        fakeSetTimeout(function () {
+            messages--;
+            rtB.queue.push(m);
+            fakeSetTimeout(function () { rtB.message(rtB.queue.shift()); }, Math.random() * 100);
+        }, Math.random() * 100);
+    };
+
+    // initialize both realtime sessions
+    [rtA, rtB].forEach(function (rt) {
+        // patchText is a helper which determines differences and applies patches
+        rt.patchText = TextPatcher.create({
+            realtime: rt
+        });
+
+        // queue messages when the realtime gets them
+        rt.onMessage(function (msg) { onMsg(rt, msg) });
+        rt.start();
+    });
+
+    var i = 0;
+    var to = setInterval(function () {
+        if (i++ > 100) {
+            // using clearTimeout to clear an interval works, but it's weird
+            clearTimeout(to);
+            var j = 0;
+            var flushCounter = 0;
+            var again = function () {
+                if (++j > 10000) { throw new Error("never synced"); }
+                rtA.sync();
+                rtB.sync();
+                if (messages === 0 && rtA.queue.length === 0 && rtB.queue.length === 0 && flushCounter++ > 250) {
+                    console.log(rtA.doc);
+                    console.log(rtB.doc);
+
+                    // they should be in sync, but this is failing, so they are not.
+                    Common.assert(rtA.doc === rtB.doc);
+                    rtA.abort();
+                    rtB.abort();
+                    callback();
+                    return;
+                } else {
+                    setTimeout(again);
+                }
+            };
+            again();
+        }
+
+        // randomly choose one of the two clients for each step
+        var RT = { a: rtA, b: rtB };
+        var choice = (Math.random() > 0.5) ? 'a' : 'b';
+        var rt = RT[choice];
+
+        /*  we're using JSON for documents because it's fragile.
+            if any operations or operational transformations result in
+            invalid JSON, we have an indication that something is wrong. */
+        try {
+            var parsed = JSON.parse(rt.doc);
+        } catch (err) {
+            console.log("Could not parse: %s\n", rt.doc);
+            console.log("Last operations were:");
+            console.log(lastOperations);
+            throw new Error();
+        }
+
+        // if we parsed, we know that the last operation break the JSON, so
+        // flush it and keep trying
+        lastOperations = [];
+
+        // generate a random operation to apply to one of the attributes
+        var op = Operation.random(parsed[choice].length);
+
+        // run that operation on the attribute, not the realtime
+        parsed[choice] = runAttributeOperation(parsed[choice], op);
+
+        // patchText computes and runs the patches on the stringified JSON
+        lastOperations.push(rt.patchText(JSON.stringify(parsed)));
+
+        try {
+            JSON.parse(rt.doc);
+        } catch (err) {
+            console.log("could not parse: %s", rt.doc);
+
+            console.log("Last operation was:");
+            console.log(lastOperation);
+
+            throw new Error();
+        }
+
+
+        rt.sync();
+    },1);
+
+};
+
 var main = module.exports.main = function (cycles, callback) {
     nThen(function (waitFor) {
         startup(waitFor());
-    }).nThen(function (waitFor) {
+    })
+    /*
+    .nThen(function (waitFor) {
         editing(waitFor());
-    }).nThen(function (waitFor) {
+    })*/.nThen(function (waitFor) {
         twoClients(cycles, waitFor());
-    }).nThen(function (waitFor) {
+    })/*.nThen(function (waitFor) {
         outOfOrderSync(waitFor());
     }).nThen(function (waitFor) {
-        checkVersionInChain(waitFor);        
+        checkVersionInChain(waitFor);
     }).nThen(function (waitFor) {
         whichStateIsDeeper(waitFor);
+    }).nThen(function (waitFor) {
+        isOperationalTransformWorking_extended(waitFor);
+    })*/.nThen(function (waitFor) {
+        breakOT(cycles, waitFor());
     }).nThen(callback);
 };
