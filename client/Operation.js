@@ -21,6 +21,9 @@ var Operation = module.exports;
 var check = Operation.check = function (op, docLength_opt) {
     Common.assert(op.type === 'Operation');
     Common.assert(Common.isUint(op.offset));
+    if (!Common.isUint(op.toRemove)) {
+        console.log(JSON.stringify(op));
+    }
     Common.assert(Common.isUint(op.toRemove));
     Common.assert(typeof(op.toInsert) === 'string');
     Common.assert(op.toRemove > 0 || op.toInsert.length > 0);
@@ -59,33 +62,43 @@ var clone = Operation.clone = function (op) {
 var apply = Operation.apply = function (op, doc)
 {
     if (Common.PARANOIA) {
-        check(op);
+                try {
+                    check(op, doc.length);
+                } catch (e) { console.log(doc); console.log(op); throw e; }
+
         Common.assert(typeof(doc) === 'string');
         Common.assert(op.offset + op.toRemove <= doc.length);
     }
-    return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
+    //console.log("\nOp.Apply1: " + JSON.stringify(doc));
+    //console.log("Op.apply2: " + JSON.stringify(op));
+    var ret = doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
+    //console.log("Op.Apply3: " + JSON.stringify(ret));
+    //try { throw new Error(); } catch (e) { console.log(e.stack); }
+    return ret;
 };
 
 var invert = Operation.invert = function (op, doc) {
     if (Common.PARANOIA) {
-        check(op);
+        check(op, doc.length);
         Common.assert(typeof(doc) === 'string');
         Common.assert(op.offset + op.toRemove <= doc.length);
     }
     var rop = clone(op);
     rop.toInsert = doc.substring(op.offset, op.offset + op.toRemove);
     rop.toRemove = op.toInsert.length;
+    if (Common.PARANOIA && doc !== apply(rop, apply(op, doc))) { throw new Error(); }
     return rop;
 };
 
-var simplify = Operation.simplify = function (op, doc) {
+var simplify = Operation.simplify = function (opOrig, doc) {
     if (Common.PARANOIA) {
-        check(op);
+        check(opOrig, doc.length);
+        apply(opOrig, doc);
         Common.assert(typeof(doc) === 'string');
-        Common.assert(op.offset + op.toRemove <= doc.length);
+        Common.assert(opOrig.offset + opOrig.toRemove <= doc.length);
     }
-    var rop = invert(op, doc);
-    op = clone(op);
+    var rop = invert(opOrig, doc);
+    var op = clone(opOrig);
 
     var minLen = Math.min(op.toInsert.length, rop.toInsert.length);
     var i;
@@ -101,7 +114,13 @@ var simplify = Operation.simplify = function (op, doc) {
         op.toRemove = i+1;
     }
 
-    if (op.toRemove === 0 && op.toInsert.length === 0) { return null; }
+    if (op.toRemove === 0 && op.toInsert.length === 0) {
+        if (Common.PARANOIA && apply(opOrig, doc) !== doc) { throw new Error(); }
+        return null;
+    }
+    if (Common.PARANOIA) {
+        if (apply(opOrig, doc) !== apply(op, doc)) { throw new Error(); }
+    }
     return op;
 };
 
@@ -216,9 +235,28 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
  * @return toTransform *or* null if the result is a no-op.
  */
 
+var jp = function (txt) {
+    if (txt === '') { return; }
+    try {
+        JSON.parse(txt);
+    } catch (e) {
+        console.log("result: " + txt);
+        throw e;
+    }
+};
+
 var transform0 = Operation.transform0 = function (text, toTransformOrig, transformByOrig) {
     console.log("Applying Operational Transform");
-
+    try{
+jp(text);
+jp(apply(toTransformOrig, text));
+jp(apply(transformByOrig, text));
+} catch (e) {
+console.log('x:' + text);
+console.log('y:' + JSON.stringify(toTransformOrig));
+console.log('z:' + JSON.stringify(transformByOrig));
+throw e;
+}
 
     // Cloning the original transformations makes this algorithm such that it
     // **DOES NOT MUTATE ANYMORE**
@@ -230,6 +268,9 @@ var transform0 = Operation.transform0 = function (text, toTransformOrig, transfo
             // simple rebase
             toTransform.offset -= transformBy.toRemove;
             toTransform.offset += transformBy.toInsert.length;
+            try {
+            JSON.parse(apply(toTransform, apply(transformByOrig, text)));
+        } catch (e) { console.log(">> " + apply(toTransform, apply(transformByOrig, text))); throw e; }
             return toTransform;
         }
         // goto the end, anything you deleted that they also deleted should be skipped.
@@ -240,15 +281,28 @@ var transform0 = Operation.transform0 = function (text, toTransformOrig, transfo
         if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
             return null;
         }
+        try{
+           JSON.parse(apply(toTransform, apply(transformByOrig, text)));
+                } catch (e) {
+console.log('\n\n\n');
+                    console.log(">> " + apply(toTransform, apply(transformByOrig, text)));
+                    console.log("xx " + text);
+console.log(toTransformOrig);
+console.log(transformByOrig);
+console.log('\n\n\n');
+                throw e; }
+
         return toTransform;
     }
     if (toTransform.offset + toTransform.toRemove < transformBy.offset) {
+        JSON.parse(apply(toTransform, apply(transformByOrig, text)));
         return toTransform;
     }
     toTransform.toRemove = transformBy.offset - toTransform.offset;
     if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
         return null;
     }
+    JSON.parse(apply(toTransform, apply(transformByOrig, text)));
     return toTransform;
 };
 

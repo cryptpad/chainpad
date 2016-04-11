@@ -115,6 +115,9 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
         check(oldPatch);
         check(newPatch);
     }
+    if (oldPatch.inverseOf) {
+        Common.assert(oldPatch.inverseOf.parentHash === newPatch.parentHash);
+    }
     oldPatch = clone(oldPatch);
     for (var i = newPatch.operations.length-1; i >= 0; i--) {
         addOperation(oldPatch, newPatch.operations[i]);
@@ -125,14 +128,23 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
 var apply = Patch.apply = function (patch, doc)
 {
     if (Common.PARANOIA) {
-        check(patch);
+        check(patch, doc.length);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
     var newDoc = doc;
+    try {
     for (var i = patch.operations.length-1; i >= 0; i--) {
         newDoc = Operation.apply(patch.operations[i], newDoc);
     }
+} catch (e) {
+    console.log("XXX---XXX");
+    console.log(JSON.stringify({
+        patch: patch,
+        doc: doc
+    }, null, '  '));
+    throw e;
+}
     return newDoc;
 };
 
@@ -149,7 +161,7 @@ var lengthChange = Patch.lengthChange = function (patch)
 var invert = Patch.invert = function (patch, doc)
 {
     if (Common.PARANOIA) {
-        check(patch);
+        check(patch, doc.length);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
@@ -166,14 +178,18 @@ var invert = Patch.invert = function (patch, doc)
         }
     }
     rpatch.parentHash = Sha.hex_sha256(newDoc);
-    if (Common.PARANOIA) { check(rpatch); }
+    if (Common.PARANOIA) {
+        check(rpatch, newDoc.length);
+        Common.assert(apply(patch, doc) === newDoc);
+        Common.assert(apply(rpatch, newDoc) === doc);
+    }
     return rpatch;
 };
 
 var simplify = Patch.simplify = function (patch, doc, operationSimplify)
 {
     if (Common.PARANOIA) {
-        check(patch);
+        check(patch, doc.length);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
@@ -194,12 +210,14 @@ var simplify = Patch.simplify = function (patch, doc, operationSimplify)
         spatch.operations.shift();
     }
     if (Common.PARANOIA) {
-        check(spatch);
+        check(spatch, doc.length);
+        Common.assert(apply(patch, doc) === apply(spatch, doc));
     }
     return spatch;
 };
 
 var equals = Patch.equals = function (patchA, patchB) {
+    if (patchA.parentHash !== patchB.parentHash) { return false; }
     if (patchA.operations.length !== patchB.operations.length) { return false; }
     for (var i = 0; i < patchA.operations.length; i++) {
         if (!Operation.equals(patchA.operations[i], patchB.operations[i])) { return false; }
@@ -208,18 +226,22 @@ var equals = Patch.equals = function (patchA, patchB) {
 };
 
 var transform = Patch.transform = function (origToTransform, transformBy, doc, transformFunction) {
-    if (Common.PARANOIA) {
+    if (Common.PARANOIA && false) { ///TODO
         check(origToTransform, doc.length);
         check(transformBy, doc.length);
         Common.assert(Sha.hex_sha256(doc) === origToTransform.parentHash);
+        Common.assert(origToTransform.parentHash === transformBy.parentHash);
+        Common.assert(equals(simplify(transformBy, doc), transformBy));
+        Common.assert(equals(simplify(origToTransform, doc), origToTransform));
     }
+    console.log(origToTransform);
     Common.assert(origToTransform.parentHash === transformBy.parentHash);
     var resultOfTransformBy = apply(transformBy, doc);
-
+console.log('assertions complete');
     toTransform = clone(origToTransform);
     var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        text = Operation.apply(toTransform.operations[i], text);
+        //text = Operation.apply(toTransform.operations[i], text);
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
             toTransform.operations[i] = Operation.transform(text,
                                                             toTransform.operations[i],
@@ -233,17 +255,22 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
             Operation.check(toTransform.operations[i], resultOfTransformBy.length);
         }
     }
-    var out = create(transformBy.parentHash);
+    var out = create(transformBy.inverseOf ?
+        transformBy.inverseOf.parentHash :
+        Sha.hex_sha256(resultOfTransformBy));
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
         if (toTransform.operations[i]) {
             addOperation(out, toTransform.operations[i]);
         }
     }
 
-    out.parentHash = Sha.hex_sha256(resultOfTransformBy);
+    if (transformBy.inverseOf) {
+        Common.assert(out.parentHash === transformBy.inverseOf.parentHash);
+    }
 
     if (Common.PARANOIA) {
         check(out, resultOfTransformBy.length);
+        Patch.apply(out, Patch.apply(transformBy, doc));
     }
     return out;
 };
@@ -258,6 +285,6 @@ var random = Patch.random = function (doc, opCount) {
         docLength += Operation.lengthChange(op);
         addOperation(patch, op);
     }
-    check(patch);
+    check(patch, docLength);
     return patch;
 };

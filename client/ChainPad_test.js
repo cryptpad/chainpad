@@ -354,8 +354,9 @@ var whichStateIsDeeper = function (callback) {
 };
 
 var breakOT = function (cycles, callback) {
+    console.log("\n\n\nbreakOt()\n\n\n");
     var i = 0;
-    var seed = function (n) { return Common.randomASCII(Math.floor(Math.random() * n)); };
+    var seed = function (n) { return Common.randomASCII(Math.floor(Math.random() * n + 10)); };
     var SEED_LENGTH = 50;
     var again = function () {
         if (++i >= cycles) { again = callback; }
@@ -365,15 +366,9 @@ var breakOT = function (cycles, callback) {
             b: seed(SEED_LENGTH)
         });
 
-        var objB = JSON.stringify({
-            a: seed(SEED_LENGTH),
-            b: seed(SEED_LENGTH)
-        });
-
         console.log(objA);
-        console.log(objB);
 
-        breakOTTwoClientsCycle(again, objA, objB);
+        breakOTTwoClientsCycle(again, objA, objA);
     };
     again();
 };
@@ -382,8 +377,8 @@ var breakOT = function (cycles, callback) {
 var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
     /* documents A and B are both valid JSON objects. */
 
-    var rtA = registerNode('breakOTTwoClients(rtA)', origDocA);
-    var rtB = registerNode('breakOTTwoClients(rtB)', origDocB);
+    var rtA = registerNode('breakOTTwoClients(rtA)', '');
+    var rtB = registerNode('breakOTTwoClients(rtB)', '');
     rtA.queue = [];
     rtB.queue = [];
     var messages = 0;
@@ -396,11 +391,13 @@ var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
         fakeSetTimeout(function () {
             messages--;
             rtA.queue.push(m);
+            console.log("A->B " + m);
             fakeSetTimeout(function () { rtA.message(rtA.queue.shift()); }, Math.random() * 100);
         }, Math.random() * 100);
         fakeSetTimeout(function () {
             messages--;
             rtB.queue.push(m);
+            console.log("B->A " + m);
             fakeSetTimeout(function () { rtB.message(rtB.queue.shift()); }, Math.random() * 100);
         }, Math.random() * 100);
     };
@@ -415,10 +412,15 @@ var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
         // queue messages when the realtime gets them
         rt.onMessage(function (msg) { onMsg(rt, msg) });
         rt.start();
+        if (rt === rtA) {
+            rt.insert(0, origDocA);
+        }
+        rt.sync();
     });
 
     var i = 0;
     var to = setInterval(function () {
+        if (messages) { return; }
         if (i++ > 100) {
             // using clearTimeout to clear an interval works, but it's weird
             clearTimeout(to);
@@ -429,11 +431,11 @@ var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
                 rtA.sync();
                 rtB.sync();
                 if (messages === 0 && rtA.queue.length === 0 && rtB.queue.length === 0 && flushCounter++ > 250) {
-                    console.log(rtA.doc);
-                    console.log(rtB.doc);
+                    console.log(rtA.getUserDoc());
+                    console.log(rtB.getUserDoc());
 
                     // they should be in sync, but this is failing, so they are not.
-                    Common.assert(rtA.doc === rtB.doc);
+                    Common.assert(rtA.getUserDoc() === rtB.getUserDoc());
                     rtA.abort();
                     rtB.abort();
                     callback();
@@ -454,9 +456,10 @@ var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
             if any operations or operational transformations result in
             invalid JSON, we have an indication that something is wrong. */
         try {
-            var parsed = JSON.parse(rt.doc);
+            if (rt.getUserDoc() === '') { return; }
+            var parsed = JSON.parse(rt.getUserDoc());
         } catch (err) {
-            console.log("Could not parse: %s\n", rt.doc);
+            console.log("Could not parse: %s\n", rt.getUserDoc());
             console.log("Last operations were:");
             console.log(lastOperations);
             throw new Error();
@@ -476,19 +479,20 @@ var breakOTTwoClientsCycle = function (callback, origDocA, origDocB) {
         lastOperations.push(rt.patchText(JSON.stringify(parsed)));
 
         try {
-            JSON.parse(rt.doc);
+            JSON.parse(rt.getUserDoc());
         } catch (err) {
-            console.log("could not parse: %s", rt.doc);
+            console.log("could not parse: %s", rt.getUserDoc());
 
             console.log("Last operation was:");
             console.log(lastOperation);
+            console.log("AuthDoc " + rt.getAuthDoc());
 
             throw new Error();
         }
 
 
         rt.sync();
-    },1);
+    },0);
 
 };
 
@@ -500,7 +504,7 @@ var main = module.exports.main = function (cycles, callback) {
     .nThen(function (waitFor) {
         editing(waitFor());
     })*/.nThen(function (waitFor) {
-        twoClients(cycles, waitFor());
+        //twoClients(cycles, waitFor());
     })/*.nThen(function (waitFor) {
         outOfOrderSync(waitFor());
     }).nThen(function (waitFor) {

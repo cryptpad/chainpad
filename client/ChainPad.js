@@ -88,6 +88,9 @@ var sync = function (realtime) {
         return;
     }
 
+        //JSON.parse(realtime.authDoc);
+        JSON.parse(Patch.apply(realtime.uncommitted, realtime.authDoc));
+
     var msg;
     if (realtime.best === realtime.initialMessage) {
         msg = realtime.initialMessage;
@@ -294,9 +297,7 @@ var check = ChainPad.check = function(realtime) {
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
 
     var uiDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
-    if (uiDoc.length !== realtime.uncommittedDocLength) {
-        Common.assert(0);
-    }
+    Common.assert(uiDoc.length === realtime.uncommittedDocLength);
     if (realtime.userInterfaceContent !== '') {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
@@ -340,6 +341,20 @@ var parentCount = function (realtime, message) {
 };
 
 var applyPatch = function (realtime, author, patch) {
+    Common.assert(patch);
+    Common.assert(patch.inverseOf);
+    if (Common.PARANOIA) {
+        var ad2 = Patch.apply(patch, realtime.authDoc);
+        ad2 && JSON.parse(ad2);
+        var ad3 = Patch.apply(patch.inverseOf, ad2);
+        //JSON.parse(Patch.apply(realtime.uncommitted, realtime.authDoc));
+        //JSON.parse(realtime.authDoc);
+        console.log("\n\n\nad2: " + JSON.stringify(ad2));
+        console.log(realtime.authDoc);
+        Common.assert(realtime.authDoc === ad3);
+        //Common.assert(JSON.parse(Patch.apply(realtime.uncommitted, realtime.authDoc)));
+    }
+
     if (author === realtime.userName && !patch.isInitialStatePatch) {
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
@@ -348,17 +363,28 @@ var applyPatch = function (realtime, author, patch) {
         }
         realtime.uncommitted = Patch.merge(inverseOldUncommitted, patch);
         realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
-
+console.log('if');
     } else {
+        var uc = realtime.uncommitted;
+        try {
+            console.log('begin_transform');
         realtime.uncommitted =
             Patch.transform(
                 realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
+            } catch (e) {
+                console.log("uc " + JSON.stringify(uc));
+                console.log(patch);
+                console.log(patch.operations);
+                console.log("ad " + realtime.authDoc);
+                throw e;
+            }
+            console.log('else');
     }
-    realtime.uncommitted.parentHash = patch.inverseOf.parentHash;
-
     realtime.authDoc = Patch.apply(patch, realtime.authDoc);
-
+    JSON.parse(Patch.apply(realtime.uncommitted, realtime.authDoc));
+    Common.assert(realtime.uncommitted.parentHash === patch.inverseOf.parentHash);
     if (Common.PARANOIA) {
+        Common.assert(Sha.hex_sha256(realtime.authDoc) === realtime.uncommitted.parentHash);
         realtime.userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     }
 };
@@ -492,6 +518,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     var authDocAtTimeOfPatch = realtime.authDoc;
 
     for (var i = 0; i < toRevert.length; i++) {
+        Common.assert(typeof(toRevert[i].content.inverseOf) !== 'undefined');
         authDocAtTimeOfPatch = Patch.apply(toRevert[i].content.inverseOf, authDocAtTimeOfPatch);
     }
 
@@ -532,8 +559,14 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         Common.assert(oldUserInterfaceContent === realtime.userInterfaceContent);
     }
 
-    // Derive the patch for the user's uncommitted work
+    // Derive the patch to take us from the old version of the user's uncommitted
+    // work to the new and transformed version.
     var uncommittedPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
+
+    var userContent;
+    if (Common.PARANOIA) {
+        userContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
+    }
 
     for (var i = 0; i < toRevert.length; i++) {
         debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
@@ -545,6 +578,10 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         debug(realtime, "applying [" + toApply[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
         applyPatch(realtime, toApply[i].userName, toApply[i].content);
+    }
+
+    if (Common.PARANOIA) {
+        Patch.apply(uncommittedPatch, userContent);
     }
 
     uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);

@@ -36,6 +36,7 @@ var makeTextOperation = module.exports.makeTextOperation = function(oldval, newv
     if (end >= newval.length - begin) { end = newval.length - begin; }
 
     return {
+        type: 'Operation',
         offset: begin,
         toRemove: oldval.length - begin - end,
         toInsert: newval.slice(begin, newval.length - end),
@@ -248,7 +249,7 @@ var transformB = function (html, toTransform, transformBy) {
     // The one which affects more content should probably be applied.
     var toRevert = toTransform;
     var toApply = transformBy;
-    var swap = function () { 
+    var swap = function () {
         var x = toRevert;
         toRevert = toApply;
         toApply = x;

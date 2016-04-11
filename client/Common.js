@@ -15,7 +15,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var PARANOIA = module.exports.PARANOIA = false;
+var PARANOIA = module.exports.PARANOIA = true;
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
 var TESTING = module.exports.TESTING = true;

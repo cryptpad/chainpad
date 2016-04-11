@@ -43,6 +43,8 @@ var applyChange = function(ctx, oldval, newval) {
         ctx.insert(commonStart, toInsert);
         console.log("insert: [" + toInsert + "]");
     }
+    if (toInsert.indexOf('"') !== -1) { throw new Error(); }
+    if (oldval.slice(commonStart, commonStart + toRemove).indexOf('"') !== -1) { throw new Error(); }
     return {
         type: 'Operation',
         offset: commonStart,
@@ -66,14 +68,15 @@ var create = function(config) {
     // propogate()
     return function (newContent) {
         var op;
-        if (newContent !== content) {
+        //if (ctx.getUserDoc() !== content) { throw new Error(); }
+        if (newContent !== ctx.getUserDoc()) {
             op = applyChange(ctx, ctx.getUserDoc(), newContent);
             if (ctx.getUserDoc() !== newContent) {
                 console.log("Expected that: `ctx.getUserDoc() === newContent`!");
             }
             return op;
         }
-        return {
+        return { /// TODO: internally we represent do-nothing ops as null :)
             type: 'Operation',
             offset: 0,
             toInsert: '',
