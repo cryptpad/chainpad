@@ -220,10 +220,16 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            toTransform.operations[i] = Operation.transform(text,
-                                                            toTransform.operations[i],
-                                                            transformBy.operations[j],
-                                                            transformFunction);
+            try {
+                toTransform.operations[i] = Operation.transform(text,
+                                                                toTransform.operations[i],
+                                                                transformBy.operations[j],
+                                                                transformFunction);
+            } catch (e) {
+                console.error("The pluggable transform function threw an error, " +
+                    "failing operational transformation");
+                return create(Sha.hex_sha256(resultOfTransformBy));
+            }
             if (!toTransform.operations[i]) {
                 break;
             }
