@@ -219,7 +219,6 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     toTransform = clone(origToTransform);
     var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        text = Operation.apply(toTransform.operations[i], text);
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
             toTransform.operations[i] = Operation.transform(text,
                                                             toTransform.operations[i],
