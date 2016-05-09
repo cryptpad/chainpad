@@ -34,7 +34,9 @@ var enterChainPad = function (realtime, func) {
 };
 
 var debug = function (realtime, msg) {
-    console.log("[" + realtime.userName + "]  " + msg);
+    if (realtime.logLevel > 0) {
+        console.log("[" + realtime.userName + "]  " + msg);
+    }
 };
 
 var schedule = function (realtime, func, timeout) {
@@ -167,12 +169,16 @@ var onPong = function (realtime, msg) {
 
 var create = ChainPad.create = function (userName, authToken, channelId, initialState, config) {
 
+    config = config || {};
+
     var realtime = {
         type: 'ChainPad',
 
         authDoc: '',
 
-        config: config || {},
+        config: config,
+
+        logLevel: typeof(config.logLevel) !== 'undefined'? config.logLevel: 1,
 
         userName: userName,
         authToken: authToken,
