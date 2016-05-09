@@ -35,21 +35,6 @@ var Os = require('os');
     g.render(Fs.createWriteStream('./chainpad.js'));
 })();
 
-(function buildOtaml() {
-    var g = new Glue();
-    g.basepath('./client');
-    g.main('Otaml.js');
-    g.include('./Otaml.js');
-    g.include('./SHA256.js');
-    g.include('./Common.js');
-    g.include('./Operation.js');
-    g.include('./HtmlParse.js');
-
-    g.export('Otaml');
-    //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
-    g.render(Fs.createWriteStream('./otaml.js'));
-})();
-
 (function buildRandHtml() {
     var g = new Glue();
     g.basepath('./client');

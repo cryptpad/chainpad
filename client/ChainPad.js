@@ -307,6 +307,8 @@ var check = ChainPad.check = function(realtime) {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
 
+    if (!Common.VALIDATE_ENTIRE_CHAIN_EACH_MSG) { return; }
+
     var doc = realtime.authDoc;
     var patchMsg = realtime.best;
     Common.assert(patchMsg.content.inverseOf.parentHash === realtime.uncommitted.parentHash);
