@@ -216,7 +216,7 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     Common.assert(origToTransform.parentHash === transformBy.parentHash);
     var resultOfTransformBy = apply(transformBy, doc);
 
-    toTransform = clone(origToTransform);
+    var toTransform = clone(origToTransform);
     var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
         text = Operation.apply(toTransform.operations[i], text);
