@@ -348,6 +348,8 @@ var parentCount = function (realtime, message) {
 };
 
 var applyPatch = function (realtime, author, patch) {
+    Common.assert(patch);
+    Common.assert(patch.inverseOf);
     if (author === realtime.userName && !patch.isInitialStatePatch) {
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
@@ -367,6 +369,8 @@ var applyPatch = function (realtime, author, patch) {
     realtime.authDoc = Patch.apply(patch, realtime.authDoc);
 
     if (Common.PARANOIA) {
+        Common.assert(realtime.uncommitted.parentHash === patch.inverseOf.parentHash);
+        Common.assert(Sha.hex_sha256(realtime.authDoc) === realtime.uncommitted.parentHash);
         realtime.userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     }
 };
@@ -500,6 +504,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     var authDocAtTimeOfPatch = realtime.authDoc;
 
     for (var i = 0; i < toRevert.length; i++) {
+        Common.assert(typeof(toRevert[i].content.inverseOf) !== 'undefined');
         authDocAtTimeOfPatch = Patch.apply(toRevert[i].content.inverseOf, authDocAtTimeOfPatch);
     }
 
