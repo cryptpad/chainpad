@@ -14,10 +14,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-var Common = require('./Common');
+var Common = module.exports.Common = require('./Common');
 var Operation = module.exports.Operation = require('./Operation');
-var Patch = require('./Patch');
-var Message = require('./Message');
+var Patch = module.exports.Patch = require('./Patch');
+var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./SHA256');
 
 var ChainPad = {};
@@ -632,6 +632,8 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
             Common.assert(typeof(handler) === 'function');
             realtime.patchHandlers.push(handler);
         }),
+
+        // remove onRemove && onInsert
         onRemove: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.opHandlers.unshift(function (op) {
@@ -644,12 +646,18 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
                 if (op.toInsert.length > 0) { handler(op.offset, op.toInsert); }
             });
         }),
+        // TODO replace remove && insert with patch
         remove: enterChainPad(realtime, function (offset, numChars) {
             doOperation(realtime, Operation.create(offset, numChars, ''));
         }),
         insert: enterChainPad(realtime, function (offset, str) {
             doOperation(realtime, Operation.create(offset, 0, str));
         }),
+
+        patch: enterChainPad(realtime, function (patch) {
+            // FIXME finish this
+        }),
+
         onMessage: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
             realtime.messageHandlers.push(handler);
