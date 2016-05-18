@@ -590,23 +590,6 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
-// deprecate and prefer getDepthOfState
-var wasEverState = function (content, realtime) {
-    Common.assert(typeof(content) === 'string');
-    // without this we would never get true on the ^HEAD
-    if (realtime.authDoc === content) {
-        return true;
-    }
-
-    var hash = Sha.hex_sha256(content);
-
-    var patchMsg = realtime.best;
-    do {
-        if (patchMsg.content.parentHash === hash) { return true; }
-    } while ((patchMsg = getParent(realtime, patchMsg)));
-    return false;
-};
-
 var getDepthOfState = function (content, minDepth, realtime) {
     Common.assert(typeof(content) === 'string');
 
