@@ -108,31 +108,59 @@ chainpad.insert(/*Number*/position, textString);
 
 ## Control Functions
 
-* Start the engine, this will cause the engine to send a register message via the data transport
+### chainpad.start()
+
+Start the engine, this will cause the engine to send a register message via the data transport
 binding.
-```javascript
-chainpad.start();
-```
-* Stop the engine forcefully, data will not be saved.
-```javascript
-chainpad.abort();
-```
-* Flush the *Uncommitted Work* back to the server, there is no guarantee that the work is actually
+
+### chainpad.abort()
+
+Stop the engine forcefully, data will not be saved.
+
+### chainpad.sync()
+
+Flush the *Uncommitted Work* back to the server, there is no guarantee that the work is actually
 committed, just that it has attempted to send it to the server.
-```javascript
-chainpad.sync();
-```
 
-* Access the *Authoritative Document*, useful for debugging.
-```javascript
-chainpad.getAuthDoc();
-```
+### chainpad.getAuthDoc()
 
-* Access the document which the engine believes is in the user interface, this is equivilant to
+Access the *Authoritative Document*, useful for debugging.
+
+### chainpad.getUserDoc()
+
+Access the document which the engine believes is in the user interface, this is equivilant to
 the *Authoritative Document* with the *Uncommitted Work* patch applied. Useful for debugging.
+
+### chainpad.getDepthOfState(state [,minDepth])
+
+Determine how deep a particular state is in the chain _relative to the current state_.
+
 ```javascript
-chainpad.getUserDoc();
+// the userDoc is 0 patches deep, by definition
+0 === chainpad.getDepthOfState(chainpad.getUserDoc());
+
+// if a state never existed in the chain, return value is -1
+-1 === chainpad.getDepthOfState("said no one ever");
+// ^^ assuming the state of the document was never "said no one ever"
 ```
+
+You can specify a minimum depth to traverse, if the specified state is encountered shallower than
+the specified depth, it will be ignored.
+
+```javascript
+// determine the last time the userDoc was 'pewpew'
+var firstEncounter = chainpad.getDepthOfState('pewpew');
+
+// check if it was ever previously in that state
+if (chainpad.getDepthOfState('pewpew', firstEncounter) !== -1) {
+    // use this pattern to check if the document state was 'pewpew'
+    // at more than one point in its history
+    console.log("the state 'pewpew' exists in the chain in at least two states");
+}
+```
+
+You can also use this to determine the length of the document's history.
+Supplying the initial state will return one less than the length of the chain.
 
 # Internals
 
@@ -148,7 +176,7 @@ document or an encapsulation of a **Patch** to be sent over the wire.
 
 ## Functions
 
-* **apply**`(Patch, Document) -> Document`: This function is fairly self-explanitory, a new document
+* **apply**`(Patch, Document) -> Document`: This function is fairly self-explanatory, a new document
 is returned which reflects the result of applying the **Patch** to the document. The hash of the
 document must be equal to `patch.parentHash`, otherwise an error will result.
 * **merge**`(Patch, Patch) -> Patch`: Merging of two mergable **Patches** yields a **Patch** which
