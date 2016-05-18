@@ -590,6 +590,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
+// deprecate and prefer getDepthOfState
 var wasEverState = function (content, realtime) {
     Common.assert(typeof(content) === 'string');
     // without this we would never get true on the ^HEAD
@@ -634,7 +635,7 @@ var getDepthOfState = function (content, minDepth, realtime) {
         }
         depth++;
     } while ((patchMsg = getParent(realtime, patchMsg)));
-    return;
+    return -1;
 };
 
 module.exports.create = function (userName, authToken, channelId, initialState, conf) {
