@@ -27,12 +27,7 @@ var startup = function (callback) {
 };
 
 var runOperation = function (realtimeFacade, op) {
-    if (op.toRemove > 0) {
-        realtimeFacade.remove(op.offset, op.toRemove);
-    }
-    if (op.toInsert.length > 0) {
-        realtimeFacade.insert(op.offset, op.toInsert);
-    }
+    realtimeFacade.patch(op.offset, op.toRemove, op.toInsert);
 };
 
 var insert = function (doc, offset, chars) {
@@ -63,9 +58,8 @@ var registerNode = function (name, initialDoc) {
     }
 
     rt.doc = initialDoc;
-    rt.onInsert(function (offset, chars) { rt.doc = insert(rt.doc, offset, chars); console.log('---'+rt.doc); });
-    rt.onRemove(function (offset, count) { rt.doc = remove(rt.doc, offset, count); });
 
+    rt.onPatch(function () { rt.doc = rt.getUserDoc() });
     return rt;
 };
 
