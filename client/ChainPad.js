@@ -228,24 +228,6 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
          * Reset to null after the initial message has been successfully broadcasted.
          */
         initialMessage: null,
-
-        // TODO deprecate
-        userListChangeHandlers: [],
-        // TODO deprecate
-        userList: [],
-
-        /** The schedule() for sending pings. */
-        // TODO deprecate
-        pingSchedule: undefined,
-
-        // TODO deprecate
-        lastPingLag: 0,
-        // TODO deprecate
-        lastPingTime: 0,
-
-        /** Average number of milliseconds between pings. */
-        // TODO deprecate
-        pingCycle: 5000
     };
 
     if (Common.PARANOIA) {
@@ -680,21 +662,6 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
         getAuthDoc: function () { return realtime.authDoc; },
         getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); },
 
-        // TODO deprecate
-        onUserListChange: enterChainPad(realtime, function (handler) {
-            console.log("[onUserListChange] is deprecated. Use Netflux functionality instead");
-            Common.assert(typeof(handler) === 'function');
-            realtime.userListChangeHandlers.push(handler);
-        }),
-
-        // TODO deprecate
-        getLag: function () {
-            console.log("[getLag] is deprecated. Use Netflux functionality instead");
-            if (realtime.lastPingTime) {
-                return { waiting:1, lag: (new Date()).getTime() - realtime.lastPingTime };
-            }
-            return { waiting:0, lag: realtime.lastPingLag };
-        },
         getDepthOfState: function (content, minDepth) {
             return getDepthOfState(content, minDepth, realtime);
         }
