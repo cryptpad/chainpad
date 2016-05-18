@@ -263,8 +263,8 @@ var checkVersionInChain = function (callback) {
 // on the 100th random change, check whether the 50th existed before
         if (i++ > 100) {
             clearTimeout(to);
-            Common.assert(rt.wasEverState(oldUserDoc));
-            Common.assert(rt.wasEverState(rt.getUserDoc()))
+            Common.assert(rt.getDepthOfState(oldUserDoc) !== -1);
+            Common.assert(rt.getDepthOfState(rt.getUserDoc()) !== -1)
             rt.abort();
             callback();
             return;
