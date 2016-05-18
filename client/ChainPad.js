@@ -168,6 +168,14 @@ var onPong = function (realtime, msg) {
 };
 
 var create = ChainPad.create = function (userName, authToken, channelId, initialState, config) {
+    /*  TODO
+        deprecate:
+            userName
+            authToken
+            channelId
+
+        put initialState into config
+    */
 
     config = config || {};
 
@@ -221,16 +229,22 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
          */
         initialMessage: null,
 
+        // TODO deprecate
         userListChangeHandlers: [],
+        // TODO deprecate
         userList: [],
 
         /** The schedule() for sending pings. */
+        // TODO deprecate
         pingSchedule: undefined,
 
+        // TODO deprecate
         lastPingLag: 0,
+        // TODO deprecate
         lastPingTime: 0,
 
         /** Average number of milliseconds between pings. */
+        // TODO deprecate
         pingCycle: 5000
     };
 
@@ -398,6 +412,11 @@ var userListChange = function (realtime) {
 };
 
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
+    /*  NOTE
+        we're getting rid of the userlist entirely.
+        This should be handled by the transport layer (Netflux)
+
+        So, get ready to remove everything relating to userlists */
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
@@ -411,6 +430,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     }
 
     if (msg.messageType === Message.REGISTER) {
+        // TODO deprecate
         realtime.userList.push(msg.userName);
         userListChange(realtime);
         return;
@@ -422,6 +442,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     }
 
     if (msg.messageType === Message.DISCONNECT) {
+        // TODO deprecate (this whole block)
         if (msg.userName === '') {
             realtime.userList = [];
             userListChange(realtime);
@@ -431,6 +452,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
         if (Common.PARANOIA) { Common.assert(idx > -1); }
         if (idx > -1) {
             realtime.userList.splice(idx, 1);
+            // TODO deprecate
             userListChange(realtime);
         }
         return;
@@ -633,29 +655,8 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
             realtime.patchHandlers.push(handler);
         }),
 
-        // remove onRemove && onInsert
-        onRemove: enterChainPad(realtime, function (handler) {
-            Common.assert(typeof(handler) === 'function');
-            realtime.opHandlers.unshift(function (op) {
-                if (op.toRemove > 0) { handler(op.offset, op.toRemove); }
-            });
-        }),
-        onInsert: enterChainPad(realtime, function (handler) {
-            Common.assert(typeof(handler) === 'function');
-            realtime.opHandlers.push(function (op) {
-                if (op.toInsert.length > 0) { handler(op.offset, op.toInsert); }
-            });
-        }),
-        // TODO replace remove && insert with patch
-        remove: enterChainPad(realtime, function (offset, numChars) {
-            doOperation(realtime, Operation.create(offset, numChars, ''));
-        }),
-        insert: enterChainPad(realtime, function (offset, str) {
-            doOperation(realtime, Operation.create(offset, 0, str));
-        }),
-
-        patch: enterChainPad(realtime, function (patch) {
-            // FIXME finish this
+        patch: enterChainPad(realtime, function (offset, count, chars) {
+            doOperation(realtime, Operation.create(offset, count, chars));
         }),
 
         onMessage: enterChainPad(realtime, function (handler) {
@@ -678,18 +679,21 @@ module.exports.create = function (userName, authToken, channelId, initialState, 
         }),
         getAuthDoc: function () { return realtime.authDoc; },
         getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); },
+
+        // TODO deprecate
         onUserListChange: enterChainPad(realtime, function (handler) {
+            console.log("[onUserListChange] is deprecated. Use Netflux functionality instead");
             Common.assert(typeof(handler) === 'function');
             realtime.userListChangeHandlers.push(handler);
         }),
+
+        // TODO deprecate
         getLag: function () {
+            console.log("[getLag] is deprecated. Use Netflux functionality instead");
             if (realtime.lastPingTime) {
                 return { waiting:1, lag: (new Date()).getTime() - realtime.lastPingTime };
             }
             return { waiting:0, lag: realtime.lastPingLag };
-        },
-        wasEverState: function (content) {
-            return wasEverState(content, realtime);
         },
         getDepthOfState: function (content, minDepth) {
             return getDepthOfState(content, minDepth, realtime);
