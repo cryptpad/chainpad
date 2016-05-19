@@ -95,7 +95,7 @@ var sync = function (realtime) {
         msg = realtime.initialMessage;
     } else {
         msg = Message.create(realtime.userName,
-                             realtime.authToken,
+                             undefined, //realtime.authToken,
                              realtime.channelId,
                              Message.PATCH,
                              realtime.uncommitted,
@@ -136,7 +136,7 @@ var getMessages = function (realtime) {
         throw new Error("failed to connect to the server");
     }, 5000);*/
     var msg = Message.create(realtime.userName,
-                             realtime.authToken,
+                             undefined, //realtime.authToken,
                              realtime.channelId,
                              Message.REGISTER);
     onMessage(realtime, Message.toString(msg), function (err) {
@@ -144,11 +144,10 @@ var getMessages = function (realtime) {
     });
 };
 
-var create = ChainPad.create = function (userName, authToken, channelId, initialState, config) {
+var create = ChainPad.create = function (userName, channelId, initialState, config) {
     /*  TODO
         deprecate:
             userName
-            authToken
             channelId
 
         put initialState into config
@@ -166,7 +165,6 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
         logLevel: typeof(config.logLevel) !== 'undefined'? config.logLevel: 1,
 
         userName: userName,
-        authToken: authToken,
         channelId: channelId,
 
         /** A patch representing all uncommitted work. */
@@ -214,7 +212,7 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
     zeroPatch.inverseOf.inverseOf = zeroPatch;
-    var zeroMsg = Message.create('', '', channelId, Message.PATCH, zeroPatch, ZERO);
+    var zeroMsg = Message.create('', undefined /*''*/, channelId, Message.PATCH, zeroPatch, ZERO);
     zeroMsg.hashOf = Message.hashOf(zeroMsg);
     zeroMsg.parentCount = 0;
     realtime.messages[zeroMsg.hashOf] = zeroMsg;
@@ -244,7 +242,7 @@ var create = ChainPad.create = function (userName, authToken, channelId, initial
         realtime.userInterfaceContent = initialState;
     }
     initialMessage = Message.create(realtime.userName,
-                                    realtime.authToken,
+                                    undefined,//realtime.authToken,
                                     realtime.channelId,
                                     Message.PATCH,
                                     initialStatePatch,
@@ -363,11 +361,6 @@ var getBestChild = function (realtime, msg) {
 };
 
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
-    /*  NOTE
-        we're getting rid of the userlist entirely.
-        This should be handled by the transport layer (Netflux)
-
-        So, get ready to remove everything relating to userlists */
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
@@ -574,12 +567,19 @@ var getDepthOfState = function (content, minDepth, realtime) {
     return -1;
 };
 
-module.exports.create = function (userName, authToken, channelId, initialState, conf) {
+module.exports.create = function (conf) {
+    // TODO deprecate
+    var userName = conf.userName;
+
+    // TODO deprecate
+    var channelId = conf.channel || conf.channelId;
+
+    var initialState = conf.initialState || '';
+
     Common.assert(typeof(userName) === 'string');
-    Common.assert(typeof(authToken) === 'string');
     Common.assert(typeof(channelId) === 'string');
     Common.assert(typeof(initialState) === 'string');
-    var realtime = ChainPad.create(userName, authToken, channelId, initialState, conf);
+    var realtime = ChainPad.create(userName, channelId, initialState, conf);
     return {
         onPatch: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
