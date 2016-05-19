@@ -21,7 +21,11 @@ var Sha = require('./SHA256');
 var nThen = require('nthen');
 
 var startup = function (callback) {
-    var rt = ChainPad.create('x','y','abc','abc');
+    var rt = ChainPad.create({
+        userName: 'x',
+        channelId: 'abc',
+        initialState: 'abc'
+    });
     rt.abort();
     callback();
 };
@@ -39,18 +43,17 @@ var remove = function (doc, offset, count) {
 };
 
 var registerNode = function (name, initialDoc) {
-    var rt = ChainPad.create(name,'y','abc',initialDoc);
+    var rt = ChainPad.create({
+        userName: name,
+        channelId:'abc',
+        initialState: initialDoc
+    });
     onMsg = rt.onMessage;
     var handlers = [];
     onMsg(function (msg) {
         setTimeout(function () {
-            if (msg === ('1:y' + name.length + ':' + name + '3:abc3:[0]')) {
-                // registration
-                rt.message('0:3:abc3:[1]');
-            } else {
-                msg = msg.substring(3); //replace(/^1:y/, '');
+                msg = msg.replace(/^0:/,''); //substring(2); //replace(/^1:y/, '');
                 handlers.forEach(function (handler) { handler(msg); });
-            }
         });
     });
     rt.onMessage = function (handler) {
