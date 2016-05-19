@@ -102,6 +102,8 @@ var sync = function (realtime) {
     onMessage(realtime, strMsg, function (err) {
         if (err) {
             debug(realtime, "Posting to server failed [" + err + "]");
+        } else {
+            handleMessage(realtime, strMsg, true);
         }
     });
 
@@ -229,6 +231,7 @@ var create = ChainPad.create = function (userName, initialState, config) {
     initialMessage = Message.create('',/*realtime.userName,*/ Message.PATCH, initialStatePatch, zeroMsg.hashOf);
     initialMessage.hashOf = Message.hashOf(initialMessage);
     initialMessage.parentCount = 1;
+    initialMessage.isFromMe = true;
 
     realtime.messages[initialMessage.hashOf] = initialMessage;
     (realtime.messagesByParent[initialMessage.lastMessageHash] || []).push(initialMessage);
@@ -302,7 +305,7 @@ var parentCount = function (realtime, message) {
 var applyPatch = function (realtime, author, patch) {
     Common.assert(patch);
     Common.assert(patch.inverseOf);
-    if (author === realtime.userName && !patch.isInitialStatePatch) {
+    if (patch.isFromMe && !patch.isInitialStatePatch) {
     // it's your patch
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
@@ -344,7 +347,7 @@ var getBestChild = function (realtime, msg) {
     return best;
 };
 
-var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
+var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
@@ -397,6 +400,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     // best child of this patch since longest chain always wins.
     msg = getBestChild(realtime, msg);
     var patch = msg.content;
+    patch.isFromMe = isFromMe;
 
     // Find the ancestor of this patch which is in the main chain, reverting as necessary
     var toRevert = [];
@@ -577,7 +581,7 @@ module.exports.create = function (conf) {
             realtime.messageHandlers.push(handler);
         }),
         message: enterChainPad(realtime, function (message) {
-            handleMessage(realtime, message);
+            handleMessage(realtime, message, false);
         }),
         start: enterChainPad(realtime, function () {
             getMessages(realtime);
