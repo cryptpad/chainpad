@@ -302,10 +302,10 @@ var parentCount = function (realtime, message) {
 };
 
 // FIXME userName
-var applyPatch = function (realtime, author, patch) {
+var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
     Common.assert(patch.inverseOf);
-    if (patch.isFromMe && !patch.isInitialStatePatch) {
+    if (isFromMe && !patch.isInitialStatePatch) {
     // it's your patch
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
@@ -333,8 +333,8 @@ var applyPatch = function (realtime, author, patch) {
 };
 
 // FIXME userName
-var revertPatch = function (realtime, author, patch) {
-    applyPatch(realtime, author, patch.inverseOf);
+var revertPatch = function (realtime, isFromMe, patch) {
+    applyPatch(realtime, isFromMe, patch.inverseOf);
 };
 
 var getBestChild = function (realtime, msg) {
@@ -399,8 +399,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     // of this message fills in a hole in the chain which makes another patch better, swap to the
     // best child of this patch since longest chain always wins.
     msg = getBestChild(realtime, msg);
+    msg.isFromMe = isFromMe;
     var patch = msg.content;
-    patch.isFromMe = isFromMe;
 
     // Find the ancestor of this patch which is in the main chain, reverting as necessary
     var toRevert = [];
@@ -486,14 +486,14 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     for (var i = 0; i < toRevert.length; i++) {
         debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
-        revertPatch(realtime, toRevert[i].userName, toRevert[i].content);
+        revertPatch(realtime, toRevert[i].isFromMe, toRevert[i].content);
     }
 
     // FIXME userName
     for (var i = 0; i < toApply.length; i++) {
         debug(realtime, "applying [" + toApply[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
-        applyPatch(realtime, toApply[i].userName, toApply[i].content);
+        applyPatch(realtime, toApply[i].isFromMe, toApply[i].content);
     }
 
     uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);
