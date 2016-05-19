@@ -94,12 +94,7 @@ var sync = function (realtime) {
     if (realtime.best === realtime.initialMessage) {
         msg = realtime.initialMessage;
     } else {
-        msg = Message.create(realtime.userName,
-                             undefined, //realtime.authToken
-                             undefined, //realtime.channelId
-                             Message.PATCH,
-                             realtime.uncommitted,
-                             realtime.best.hashOf);
+        msg = Message.create(realtime.userName, Message.PATCH, realtime.uncommitted, realtime.best.hashOf);
     }
 
     var strMsg = Message.toString(msg);
@@ -132,13 +127,7 @@ var sync = function (realtime) {
 
 var getMessages = function (realtime) {
     realtime.registered = true;
-    /*var to = schedule(realtime, function () {
-        throw new Error("failed to connect to the server");
-    }, 5000);*/
-    var msg = Message.create(realtime.userName,
-                             undefined, //realtime.authToken,
-                             undefined, // realtime.channelId
-                             Message.REGISTER);
+    var msg = Message.create('', Message.REGISTER);
     onMessage(realtime, Message.toString(msg), function (err) {
         if (err) { throw err; }
     });
@@ -162,9 +151,6 @@ var create = ChainPad.create = function (userName, initialState, config) {
         logLevel: typeof(config.logLevel) !== 'undefined'? config.logLevel: 1,
 
         userName: userName,
-
-        // TODO deprecate
-        channelId: '', //channelId,
 
         /** A patch representing all uncommitted work. */
         uncommitted: null,
@@ -211,7 +197,7 @@ var create = ChainPad.create = function (userName, initialState, config) {
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
     zeroPatch.inverseOf.inverseOf = zeroPatch;
-    var zeroMsg = Message.create('', undefined /*''*/, '', Message.PATCH, zeroPatch, ZERO);
+    var zeroMsg = Message.create('', Message.PATCH, zeroPatch, ZERO);
     zeroMsg.hashOf = Message.hashOf(zeroMsg);
     zeroMsg.parentCount = 0;
     realtime.messages[zeroMsg.hashOf] = zeroMsg;
@@ -240,12 +226,7 @@ var create = ChainPad.create = function (userName, initialState, config) {
     if (Common.PARANOIA) {
         realtime.userInterfaceContent = initialState;
     }
-    initialMessage = Message.create(realtime.userName,
-                                    undefined,//realtime.authToken,
-                                    realtime.channelId, // TODO deprecate
-                                    Message.PATCH,
-                                    initialStatePatch,
-                                    zeroMsg.hashOf);
+    initialMessage = Message.create('',/*realtime.userName,*/ Message.PATCH, initialStatePatch, zeroMsg.hashOf);
     initialMessage.hashOf = Message.hashOf(initialMessage);
     initialMessage.parentCount = 1;
 

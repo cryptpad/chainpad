@@ -23,7 +23,6 @@ var nThen = require('nthen');
 var startup = function (callback) {
     var rt = ChainPad.create({
         userName: 'x',
-        channelId: 'abc',
         initialState: 'abc'
     });
     rt.abort();

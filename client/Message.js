@@ -50,7 +50,7 @@ var check = Message.check = function(msg) {
     }
 };
 
-var create = Message.create = function (userName, authToken, channelId, type, content, lastMsgHash) {
+var create = Message.create = function (userName, type, content, lastMsgHash) {
     var msg = {
         type: 'Message',
         userName: userName,
@@ -83,11 +83,13 @@ var toString = Message.toString = function (msg) {
         content.length + ':' + content;
 };
 
-var discardBencode = function (msg) {
-    var channelIdLen = msg.substring(0,msg.indexOf(':'));
-    msg = msg.substring(channelIdLen.length+1);
-    var channelId = msg.substring(0,Number(channelIdLen));
-    msg = msg.substring(channelId.length);
+var discardBencode = function (msg, arr) {
+    var len = msg.substring(0,msg.indexOf(':'));
+    msg = msg.substring(len.length+1);
+    var value = msg.substring(0,Number(len));
+    msg = msg.substring(value.length);
+
+    if (arr) { arr.push(value); }
     return msg;
 };
 
@@ -97,30 +99,29 @@ var fromString = Message.fromString = function (str) {
 if (str.charAt(0) === '[') {
     return JSON.parse(str);
 } else {
-    // TODO disregard uname
-    var unameLen = msg.substring(0,msg.indexOf(':'));
-    msg = msg.substring(unameLen.length+1);
-    var userName = msg.substring(0,Number(unameLen));
-    msg = msg.substring(userName.length);
+
+
+
+    var parts = [];
+    msg = discardBencode(msg, parts);
+
+    var userName = parts[0]; // TODO deprecate
 
     // cut off the channelId
-    msg = discardBencode(msg);
+    msg = discardBencode(msg, parts); // we don't actually care about channelId
 
-    var contentStrLen = msg.substring(0,msg.indexOf(':'));
-    msg = msg.substring(contentStrLen.length+1);
-    var contentStr = msg.substring(0,Number(contentStrLen));
-
-    Common.assert(contentStr.length === Number(contentStrLen));
+    msg = discardBencode(msg, parts);
+    var contentStr = parts[2];
 
     var content = JSON.parse(contentStr);
     var message;
     if (content[0] === PATCH) {
-        message = create(userName, '', '', PATCH, Patch.fromObj(content[1]), content[2]);
+        message = create(userName, PATCH, Patch.fromObj(content[1]), content[2]);
     } else if ([4,5].indexOf(content[0]) !== -1 /* === PING || content[0] === PONG*/) {
         // it's a ping or pong, which we don't want to support anymore
-        message = create(userName, '', '', content[0], content[1]);
+        message = create(userName, content[0], content[1]);
     } else {
-        message = create(userName, '', '', content[0]);
+        message = create(userName, content[0]);
     }
 
     // This check validates every operation in the patch.
