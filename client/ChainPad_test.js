@@ -70,7 +70,7 @@ var editing = function (callback) {
     rt.onMessage(function (msg, cb) {
         messages++;
         //rt.message(msg);
-        setTimeout(cb);
+        cb();
     });
     rt.start();
 
@@ -243,7 +243,7 @@ var checkVersionInChain = function (callback) {
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;
-        setTimeout(cb);
+        cb(); // must be sync because of the setInterval below
     });
     rt.start();
 
@@ -279,7 +279,7 @@ var whichStateIsDeeper = function (callback) {
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;
-        setTimeout(cb);
+        cb(); // must be sync because of the setInterval below
     });
     rt.start();
 
@@ -343,8 +343,8 @@ var main = module.exports.main = function (cycles, callback) {
     }).nThen(function (waitFor) {
         outOfOrderSync(waitFor());
     }).nThen(function (waitFor) {
-        checkVersionInChain(waitFor);
+        checkVersionInChain(waitFor());
     }).nThen(function (waitFor) {
-        whichStateIsDeeper(waitFor);
+        whichStateIsDeeper(waitFor());
     }).nThen(callback);
 };
