@@ -95,8 +95,8 @@ var sync = function (realtime) {
         msg = realtime.initialMessage;
     } else {
         msg = Message.create(realtime.userName,
-                             undefined, //realtime.authToken,
-                             realtime.channelId,
+                             undefined, //realtime.authToken
+                             undefined, //realtime.channelId
                              Message.PATCH,
                              realtime.uncommitted,
                              realtime.best.hashOf);
@@ -137,19 +137,16 @@ var getMessages = function (realtime) {
     }, 5000);*/
     var msg = Message.create(realtime.userName,
                              undefined, //realtime.authToken,
-                             realtime.channelId,
+                             undefined, // realtime.channelId
                              Message.REGISTER);
     onMessage(realtime, Message.toString(msg), function (err) {
         if (err) { throw err; }
     });
 };
 
-var create = ChainPad.create = function (userName, channelId, initialState, config) {
+var create = ChainPad.create = function (userName, initialState, config) {
     /*  TODO
-        deprecate:
-            userName
-            channelId
-
+        deprecate: userName
         put initialState into config
     */
 
@@ -165,7 +162,9 @@ var create = ChainPad.create = function (userName, channelId, initialState, conf
         logLevel: typeof(config.logLevel) !== 'undefined'? config.logLevel: 1,
 
         userName: userName,
-        channelId: channelId,
+
+        // TODO deprecate
+        channelId: '', //channelId,
 
         /** A patch representing all uncommitted work. */
         uncommitted: null,
@@ -212,7 +211,7 @@ var create = ChainPad.create = function (userName, channelId, initialState, conf
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
     zeroPatch.inverseOf.inverseOf = zeroPatch;
-    var zeroMsg = Message.create('', undefined /*''*/, channelId, Message.PATCH, zeroPatch, ZERO);
+    var zeroMsg = Message.create('', undefined /*''*/, '', Message.PATCH, zeroPatch, ZERO);
     zeroMsg.hashOf = Message.hashOf(zeroMsg);
     zeroMsg.parentCount = 0;
     realtime.messages[zeroMsg.hashOf] = zeroMsg;
@@ -243,7 +242,7 @@ var create = ChainPad.create = function (userName, channelId, initialState, conf
     }
     initialMessage = Message.create(realtime.userName,
                                     undefined,//realtime.authToken,
-                                    realtime.channelId,
+                                    realtime.channelId, // TODO deprecate
                                     Message.PATCH,
                                     initialStatePatch,
                                     zeroMsg.hashOf);
@@ -318,10 +317,12 @@ var parentCount = function (realtime, message) {
     return message.parentCount;
 };
 
+// FIXME userName
 var applyPatch = function (realtime, author, patch) {
     Common.assert(patch);
     Common.assert(patch.inverseOf);
     if (author === realtime.userName && !patch.isInitialStatePatch) {
+    // it's your patch
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
         if (Common.PARANOIA) {
@@ -331,6 +332,7 @@ var applyPatch = function (realtime, author, patch) {
         realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
 
     } else {
+        // it's someone else's patch
         realtime.uncommitted =
             Patch.transform(
                 realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
@@ -346,6 +348,7 @@ var applyPatch = function (realtime, author, patch) {
     }
 };
 
+// FIXME userName
 var revertPatch = function (realtime, author, patch) {
     applyPatch(realtime, author, patch.inverseOf);
 };
@@ -494,12 +497,14 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     // Derive the patch for the user's uncommitted work
     var uncommittedPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
 
+    // FIXME userName
     for (var i = 0; i < toRevert.length; i++) {
         debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
         revertPatch(realtime, toRevert[i].userName, toRevert[i].content);
     }
 
+    // FIXME userName
     for (var i = 0; i < toApply.length; i++) {
         debug(realtime, "applying [" + toApply[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
@@ -571,15 +576,11 @@ module.exports.create = function (conf) {
     // TODO deprecate
     var userName = conf.userName;
 
-    // TODO deprecate
-    var channelId = conf.channel || conf.channelId;
-
     var initialState = conf.initialState || '';
 
     Common.assert(typeof(userName) === 'string');
-    Common.assert(typeof(channelId) === 'string');
     Common.assert(typeof(initialState) === 'string');
-    var realtime = ChainPad.create(userName, channelId, initialState, conf);
+    var realtime = ChainPad.create(userName, initialState, conf);
     return {
         onPatch: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
