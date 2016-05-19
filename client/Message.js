@@ -25,8 +25,8 @@ var REGISTER     = Message.REGISTER     = 0;
 var REGISTER_ACK = Message.REGISTER_ACK = 1;
 var PATCH        = Message.PATCH        = 2;
 var DISCONNECT   = Message.DISCONNECT   = 3;
-var PING         = Message.PING         = 4;
-var PONG         = Message.PONG         = 5;
+//var PING         = Message.PING         = 4;
+//var PONG         = Message.PONG         = 5;
 
 var check = Message.check = function(msg) {
     Common.assert(msg.type === 'Message');
@@ -37,9 +37,6 @@ var check = Message.check = function(msg) {
     if (msg.messageType === PATCH) {
         Patch.check(msg.content);
         Common.assert(typeof(msg.lastMsgHash) === 'string');
-    } else if (msg.messageType === PING || msg.messageType === PONG) {
-        Common.assert(typeof(msg.lastMsgHash) === 'undefined');
-        Common.assert(typeof(msg.content) === 'number');
     } else if (msg.messageType === REGISTER
         || msg.messageType === REGISTER_ACK
         || msg.messageType === DISCONNECT)
@@ -47,6 +44,8 @@ var check = Message.check = function(msg) {
         Common.assert(typeof(msg.lastMsgHash) === 'undefined');
         Common.assert(typeof(msg.content) === 'undefined');
     } else {
+        // might be a ping or a pong.
+        // those are invalid now.
         throw new Error("invalid message type [" + msg.messageType + "]");
     }
 };
@@ -67,14 +66,16 @@ var create = Message.create = function (userName, authToken, channelId, type, co
 
 var toString = Message.toString = function (msg) {
     if (Common.PARANOIA) { check(msg); }
+
     var prefix = msg.messageType + ':';
     var content = '';
     if (msg.messageType === REGISTER) {
         content = JSON.stringify([REGISTER]);
-    } else if (msg.messageType === PING || msg.messageType === PONG) {
-        content = JSON.stringify([msg.messageType, msg.content]);
     } else if (msg.messageType === PATCH) {
         content = JSON.stringify([PATCH, Patch.toObj(msg.content), msg.lastMsgHash]);
+    } else {
+        // pings and pongs are invalid now
+        throw new Error("invalid message type [" + msg.messageType + "]");
     }
     return msg.authToken.length + ":" + msg.authToken +
         msg.userName.length + ":" + msg.userName +
@@ -84,6 +85,11 @@ var toString = Message.toString = function (msg) {
 
 var fromString = Message.fromString = function (str) {
     var msg = str;
+
+if (str.charAt(0) === '[') {
+    return JSON.parse(str);
+} else {
+    // TODO disregard uname && channelId
 
     var unameLen = msg.substring(0,msg.indexOf(':'));
     msg = msg.substring(unameLen.length+1);
@@ -105,7 +111,8 @@ var fromString = Message.fromString = function (str) {
     var message;
     if (content[0] === PATCH) {
         message = create(userName, '', channelId, PATCH, Patch.fromObj(content[1]), content[2]);
-    } else if (content[0] === PING || content[0] === PONG) {
+    } else if ([4,5].indexOf(content[0]) !== -1 /* === PING || content[0] === PONG*/) {
+        // it's a ping or pong, which we don't want to support anymore
         message = create(userName, '', channelId, content[0], content[1]);
     } else {
         message = create(userName, '', channelId, content[0]);
@@ -115,6 +122,7 @@ var fromString = Message.fromString = function (str) {
     check(message);
 
     return message
+}
 };
 
 var hashOf = Message.hashOf = function (msg) {
