@@ -94,7 +94,7 @@ var sync = function (realtime) {
     if (realtime.best === realtime.initialMessage) {
         msg = realtime.initialMessage;
     } else {
-        msg = Message.create(realtime.userName, Message.PATCH, realtime.uncommitted, realtime.best.hashOf);
+        msg = Message.create(Message.PATCH, realtime.uncommitted, realtime.best.hashOf);
     }
 
     var strMsg = Message.toString(msg);
@@ -127,15 +127,7 @@ var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
-var getMessages = function (realtime) {
-    realtime.registered = true;
-    var msg = Message.create('', Message.REGISTER);
-    onMessage(realtime, Message.toString(msg), function (err) {
-        if (err) { throw err; }
-    });
-};
-
-var create = ChainPad.create = function (userName, initialState, config) {
+var create = ChainPad.create = function ( initialState, config) {
     /*  TODO
         deprecate: userName
         put initialState into config
@@ -151,8 +143,6 @@ var create = ChainPad.create = function (userName, initialState, config) {
         config: config,
 
         logLevel: typeof(config.logLevel) !== 'undefined'? config.logLevel: 1,
-
-        userName: userName,
 
         /** A patch representing all uncommitted work. */
         uncommitted: null,
@@ -185,6 +175,8 @@ var create = ChainPad.create = function (userName, initialState, config) {
 
         rootMessage: null,
 
+        userName: config.userName,
+
         /**
          * Set to the message which sets the initialState if applicable.
          * Reset to null after the initial message has been successfully broadcasted.
@@ -199,7 +191,7 @@ var create = ChainPad.create = function (userName, initialState, config) {
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
     zeroPatch.inverseOf.inverseOf = zeroPatch;
-    var zeroMsg = Message.create('', Message.PATCH, zeroPatch, ZERO);
+    var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
     zeroMsg.hashOf = Message.hashOf(zeroMsg);
     zeroMsg.parentCount = 0;
     realtime.messages[zeroMsg.hashOf] = zeroMsg;
@@ -228,7 +220,7 @@ var create = ChainPad.create = function (userName, initialState, config) {
     if (Common.PARANOIA) {
         realtime.userInterfaceContent = initialState;
     }
-    initialMessage = Message.create('',/*realtime.userName,*/ Message.PATCH, initialStatePatch, zeroMsg.hashOf);
+    initialMessage = Message.create(Message.PATCH, initialStatePatch, zeroMsg.hashOf);
     initialMessage.hashOf = Message.hashOf(initialMessage);
     initialMessage.parentCount = 1;
     initialMessage.isFromMe = true;
@@ -352,17 +344,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
 
-    // TODO Remove (this is still active);
-    if (msg.messageType === Message.REGISTER_ACK) {
-        debug(realtime, "registered");
-        realtime.registered = true;
-        return;
-    }
-
     // These are all deprecated message types
     if (['REGISTER', 'PONG', 'DISCONNECT'].map(function (x) {
         return Message[x];
     }).indexOf(msg.messageType) !== -1) {
+        console.log(msgStr);
+        console.log(msg.messageType);
         console.log("Deprecated message type: [%s]", msg.messageType);
         return;
     }
@@ -558,14 +545,10 @@ var getDepthOfState = function (content, minDepth, realtime) {
 };
 
 module.exports.create = function (conf) {
-    // TODO deprecate
-    var userName = conf.userName;
-
     var initialState = conf.initialState || '';
 
-    Common.assert(typeof(userName) === 'string');
     Common.assert(typeof(initialState) === 'string');
-    var realtime = ChainPad.create(userName, initialState, conf);
+    var realtime = ChainPad.create(initialState, conf);
     return {
         onPatch: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
@@ -584,7 +567,6 @@ module.exports.create = function (conf) {
             handleMessage(realtime, message, false);
         }),
         start: enterChainPad(realtime, function () {
-            getMessages(realtime);
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         }),

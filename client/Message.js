@@ -30,32 +30,17 @@ var DISCONNECT   = Message.DISCONNECT   = 3;
 
 var check = Message.check = function(msg) {
     Common.assert(msg.type === 'Message');
-    Common.assert(typeof(msg.userName) === 'string');
-    Common.assert(typeof(msg.authToken) === 'string');
-    Common.assert(typeof(msg.channelId) === 'string');
-
     if (msg.messageType === PATCH) {
         Patch.check(msg.content);
         Common.assert(typeof(msg.lastMsgHash) === 'string');
-    } else if (msg.messageType === REGISTER
-        || msg.messageType === REGISTER_ACK
-        || msg.messageType === DISCONNECT)
-    {
-        Common.assert(typeof(msg.lastMsgHash) === 'undefined');
-        Common.assert(typeof(msg.content) === 'undefined');
     } else {
-        // might be a ping or a pong.
-        // those are invalid now.
         throw new Error("invalid message type [" + msg.messageType + "]");
     }
 };
 
-var create = Message.create = function (userName, type, content, lastMsgHash) {
+var create = Message.create = function (type, content, lastMsgHash) {
     var msg = {
         type: 'Message',
-        userName: userName,
-        authToken: '',
-        channelId: '',
         messageType: type,
         content: content,
         lastMsgHash: lastMsgHash
@@ -67,20 +52,11 @@ var create = Message.create = function (userName, type, content, lastMsgHash) {
 var toString = Message.toString = function (msg) {
     if (Common.PARANOIA) { check(msg); }
 
-    var prefix = msg.messageType + ':';
-    var content = '';
-    if (msg.messageType === REGISTER) {
-        content = JSON.stringify([REGISTER]);
-    } else if (msg.messageType === PATCH) {
-        content = JSON.stringify([PATCH, Patch.toObj(msg.content), msg.lastMsgHash]);
+    if (msg.messageType === PATCH) {
+        return JSON.stringify([PATCH, Patch.toObj(msg.content), msg.lastMsgHash]);
     } else {
-        // pings and pongs are invalid now
-        throw new Error("invalid message type [" + msg.messageType + "]");
+        throw new Error();
     }
-    return msg.authToken.length + ":" + msg.authToken +
-        msg.userName.length + ":" + msg.userName +
-        msg.channelId.length + ":" + msg.channelId +
-        content.length + ':' + content;
 };
 
 var discardBencode = function (msg, arr) {
@@ -97,9 +73,11 @@ var fromString = Message.fromString = function (str) {
     var msg = str;
 
 if (str.charAt(0) === '[') {
-    return JSON.parse(str);
+    var m = JSON.parse(str);
+    console.log(str);
+    return create(m[0], Patch.fromObj(m[1]), m[2]);
 } else {
-
+throw new Error();
 
 
     var parts = [];

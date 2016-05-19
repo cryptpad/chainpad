@@ -44,15 +44,13 @@ var remove = function (doc, offset, count) {
 var registerNode = function (name, initialDoc) {
     var rt = ChainPad.create({
         userName: name,
-        channelId:'abc',
         initialState: initialDoc
     });
     onMsg = rt.onMessage;
     var handlers = [];
-    onMsg(function (msg) {
+    onMsg(function (msg, cb) {
         setTimeout(function () {
-                msg = msg.replace(/^0:/,''); //substring(2); //replace(/^1:y/, '');
-                handlers.forEach(function (handler) { handler(msg); });
+            handlers.forEach(function (handler) { handler(msg, cb); });
         });
     });
     rt.onMessage = function (handler) {
@@ -69,9 +67,10 @@ var editing = function (callback) {
     var doc = '';
     var rt = registerNode('editing()', '');
     var messages = 0;
-    rt.onMessage(function (msg) {
+    rt.onMessage(function (msg, cb) {
         messages++;
-        rt.message(msg);
+        //rt.message(msg);
+        setTimeout(cb);
     });
     rt.start();
 
@@ -111,23 +110,22 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
     rtA.queue = [];
     rtB.queue = [];
     var messages = 0;
-    
-    var onMsg = function (rt, msg) {
-        messages+=2;
+
+    var onMsg = function (rt, msg, cb) {
+        messages++;
         var m = msg.replace(/^1:y/, '');
+        var destRt = (rt === rtA) ? rtB : rtA;
         fakeSetTimeout(function () {
             messages--;
-            rtA.queue.push(m);
-            fakeSetTimeout(function () { rtA.message(rtA.queue.shift()); }, Math.random() * 100);
-        }, Math.random() * 100);
-        fakeSetTimeout(function () {
-            messages--;
-            rtB.queue.push(m);
-            fakeSetTimeout(function () { rtB.message(rtB.queue.shift()); }, Math.random() * 100);
+            destRt.queue.push(m);
+            fakeSetTimeout(function () {
+                destRt.message(destRt.queue.shift());
+                cb();
+            }, Math.random() * 100);
         }, Math.random() * 100);
     };
     [rtA, rtB].forEach(function (rt) {
-        rt.onMessage(function (msg) { onMsg(rt, msg) });
+        rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb) });
         rt.start();
     });
 
@@ -197,8 +195,8 @@ var syncCycle = function (messages, finalDoc, name, callback) {
 var outOfOrderSync = function (callback) {
     var messages = [];
     var rtA = registerNode('outOfOrderSync()', '');
-    rtA.onMessage(function (msg) {
-        rtA.message(msg);
+    rtA.onMessage(function (msg, cb) {
+        setTimeout(cb);
         messages.push(msg);
     });
     var i = 0;
@@ -241,11 +239,11 @@ var outOfOrderSync = function (callback) {
 var checkVersionInChain = function (callback) {
     var doc = '';
 // create a chainpad
-    var rt = registerNode('editing()', '');
+    var rt = registerNode('checkVersionInChain()', '');
     var messages = 0;
-    rt.onMessage(function (msg) {
+    rt.onMessage(function (msg, cb) {
         messages++;
-        rt.message(msg);
+        setTimeout(cb);
     });
     rt.start();
 
@@ -277,11 +275,11 @@ var checkVersionInChain = function (callback) {
 
 var whichStateIsDeeper = function (callback) {
 // create a chainpad
-    var rt = registerNode('editing()', '');
+    var rt = registerNode('whichStateIsDeeper()', '');
     var messages = 0;
-    rt.onMessage(function (msg) {
+    rt.onMessage(function (msg, cb) {
         messages++;
-        rt.message(msg);
+        setTimeout(cb);
     });
     rt.start();
 
@@ -345,7 +343,7 @@ var main = module.exports.main = function (cycles, callback) {
     }).nThen(function (waitFor) {
         outOfOrderSync(waitFor());
     }).nThen(function (waitFor) {
-        checkVersionInChain(waitFor);        
+        checkVersionInChain(waitFor);
     }).nThen(function (waitFor) {
         whichStateIsDeeper(waitFor);
     }).nThen(callback);
