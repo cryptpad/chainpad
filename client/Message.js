@@ -54,7 +54,7 @@ var create = Message.create = function (userName, authToken, channelId, type, co
     var msg = {
         type: 'Message',
         userName: userName,
-        authToken: authToken,
+        authToken: '',
         channelId: channelId,
         messageType: type,
         content: content,
