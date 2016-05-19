@@ -144,29 +144,6 @@ var getMessages = function (realtime) {
     });
 };
 
-var sendPing = function (realtime) {
-    realtime.pingSchedule = undefined;
-    realtime.lastPingTime = (new Date()).getTime();
-    var msg = Message.create(realtime.userName,
-                             realtime.authToken,
-                             realtime.channelId,
-                             Message.PING,
-                             realtime.lastPingTime);
-    onMessage(realtime, Message.toString(msg), function (err) {
-        if (err) { throw err; }
-    });
-};
-
-var onPong = function (realtime, msg) {
-    if (Common.PARANOIA) {
-        Common.assert(realtime.lastPingTime === Number(msg.content));
-    }
-    realtime.lastPingLag = (new Date()).getTime() - Number(msg.content);
-    realtime.lastPingTime = 0;
-    realtime.pingSchedule =
-        schedule(realtime, function () { sendPing(realtime); }, realtime.pingCycle);
-};
-
 var create = ChainPad.create = function (userName, authToken, channelId, initialState, config) {
     /*  TODO
         deprecate:
@@ -385,14 +362,6 @@ var getBestChild = function (realtime, msg) {
     return best;
 };
 
-var userListChange = function (realtime) {
-    for (var i = 0; i < realtime.userListChangeHandlers.length; i++) {
-        var list = [];
-        list.push.apply(list, realtime.userList);
-        realtime.userListChangeHandlers[i](list);
-    }
-};
-
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
     /*  NOTE
         we're getting rid of the userlist entirely.
@@ -402,46 +371,26 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
-    Common.assert(msg.channelId === realtime.channelId);
 
+    // TODO Remove (this is still active);
     if (msg.messageType === Message.REGISTER_ACK) {
         debug(realtime, "registered");
         realtime.registered = true;
-        sendPing(realtime);
         return;
     }
 
-    if (msg.messageType === Message.REGISTER) {
-        // TODO deprecate
-        realtime.userList.push(msg.userName);
-        userListChange(realtime);
-        return;
-    }
-
-    if (msg.messageType === Message.PONG) {
-        onPong(realtime, msg);
-        return;
-    }
-
-    if (msg.messageType === Message.DISCONNECT) {
-        // TODO deprecate (this whole block)
-        if (msg.userName === '') {
-            realtime.userList = [];
-            userListChange(realtime);
-            return;
-        }
-        var idx = realtime.userList.indexOf(msg.userName);
-        if (Common.PARANOIA) { Common.assert(idx > -1); }
-        if (idx > -1) {
-            realtime.userList.splice(idx, 1);
-            // TODO deprecate
-            userListChange(realtime);
-        }
+    // These are all deprecated message types
+    if (['REGISTER', 'PONG', 'DISCONNECT'].map(function (x) {
+        return Message[x];
+    }).indexOf(msg.messageType) !== -1) {
+        console.log("Deprecated message type: [%s]", msg.messageType);
         return;
     }
 
     // otherwise it's a disconnect.
-    if (msg.messageType !== Message.PATCH) { return; }
+    if (msg.messageType !== Message.PATCH) {
+        console.error("disconnect");
+        return; }
 
     msg.hashOf = Message.hashOf(msg);
 
