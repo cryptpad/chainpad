@@ -289,12 +289,10 @@ var parentCount = function (realtime, message) {
     return message.parentCount;
 };
 
-// FIXME userName
 var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
     Common.assert(patch.inverseOf);
     if (isFromMe && !patch.isInitialStatePatch) {
-    // it's your patch
         var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
         var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
         if (Common.PARANOIA) {
@@ -304,7 +302,6 @@ var applyPatch = function (realtime, isFromMe, patch) {
         realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
 
     } else {
-        // it's someone else's patch
         realtime.uncommitted =
             Patch.transform(
                 realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
@@ -320,7 +317,6 @@ var applyPatch = function (realtime, isFromMe, patch) {
     }
 };
 
-// FIXME userName
 var revertPatch = function (realtime, isFromMe, patch) {
     applyPatch(realtime, isFromMe, patch.inverseOf);
 };
@@ -463,14 +459,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     // Derive the patch for the user's uncommitted work
     var uncommittedPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
 
-    // FIXME userName
     for (var i = 0; i < toRevert.length; i++) {
         debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
         revertPatch(realtime, toRevert[i].isFromMe, toRevert[i].content);
     }
 
-    // FIXME userName
     for (var i = 0; i < toApply.length; i++) {
         debug(realtime, "applying [" + toApply[i].hashOf + "]");
         uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
