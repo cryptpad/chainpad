@@ -127,13 +127,9 @@ var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
-var create = ChainPad.create = function ( initialState, config) {
-    /*  TODO
-        deprecate: userName
-        put initialState into config
-    */
-
+var create = ChainPad.create = function (config) {
     config = config || {};
+    var initialState = config.initialState || '';
 
     var realtime = {
         type: 'ChainPad',
@@ -348,8 +344,6 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (['REGISTER', 'PONG', 'DISCONNECT'].map(function (x) {
         return Message[x];
     }).indexOf(msg.messageType) !== -1) {
-        console.log(msgStr);
-        console.log(msg.messageType);
         console.log("Deprecated message type: [%s]", msg.messageType);
         return;
     }
@@ -545,10 +539,7 @@ var getDepthOfState = function (content, minDepth, realtime) {
 };
 
 module.exports.create = function (conf) {
-    var initialState = conf.initialState || '';
-
-    Common.assert(typeof(initialState) === 'string');
-    var realtime = ChainPad.create(initialState, conf);
+    var realtime = ChainPad.create(conf);
     return {
         onPatch: enterChainPad(realtime, function (handler) {
             Common.assert(typeof(handler) === 'function');
