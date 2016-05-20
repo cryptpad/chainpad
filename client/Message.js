@@ -74,10 +74,9 @@ var fromString = Message.fromString = function (str) {
 
 if (str.charAt(0) === '[') {
     var m = JSON.parse(str);
-    console.log(str);
     return create(m[0], Patch.fromObj(m[1]), m[2]);
 } else {
-throw new Error();
+throw new Error('LEGACY MESSAGE TYPE');
 
 
     var parts = [];
