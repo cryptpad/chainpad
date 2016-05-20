@@ -35,7 +35,7 @@ var enterChainPad = function (realtime, func) {
 
 var debug = function (realtime, msg) {
     if (realtime.logLevel > 0) {
-        console.log("[" + (realtime.userName || 'nameless user') + "]  " + msg);
+        console.log("[" + realtime.userName + "]  " + msg);
     }
 };
 
@@ -171,7 +171,7 @@ var create = ChainPad.create = function (config) {
 
         rootMessage: null,
 
-        userName: config.userName,
+        userName: config.userName || 'anonymous',
 
         /**
          * Set to the message which sets the initialState if applicable.
