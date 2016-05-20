@@ -25,8 +25,6 @@ var REGISTER     = Message.REGISTER     = 0;
 var REGISTER_ACK = Message.REGISTER_ACK = 1;
 var PATCH        = Message.PATCH        = 2;
 var DISCONNECT   = Message.DISCONNECT   = 3;
-//var PING         = Message.PING         = 4;
-//var PONG         = Message.PONG         = 5;
 
 var check = Message.check = function(msg) {
     Common.assert(msg.type === 'Message');
@@ -72,47 +70,45 @@ var discardBencode = function (msg, arr) {
 var fromString = Message.fromString = function (str) {
     var msg = str;
 
-if (str.charAt(0) === '[') {
-    var m = JSON.parse(str);
-    return create(m[0], Patch.fromObj(m[1]), m[2]);
-} else {
-throw new Error('LEGACY MESSAGE TYPE');
-
-
-    var parts = [];
-    msg = discardBencode(msg, parts);
-
-    var userName = parts[0]; // TODO deprecate
-
-    // cut off the channelId
-    msg = discardBencode(msg, parts); // we don't actually care about channelId
-
-    msg = discardBencode(msg, parts);
-    var contentStr = parts[2];
-
-    var content = JSON.parse(contentStr);
-    var message;
-    if (content[0] === PATCH) {
-        message = create(userName, PATCH, Patch.fromObj(content[1]), content[2]);
-    } else if ([4,5].indexOf(content[0]) !== -1 /* === PING || content[0] === PONG*/) {
-        // it's a ping or pong, which we don't want to support anymore
-        message = create(userName, content[0], content[1]);
+    if (str.charAt(0) === '[') {
+        var m = JSON.parse(str);
+        return create(m[0], Patch.fromObj(m[1]), m[2]);
     } else {
-        message = create(userName, content[0]);
+        /*  Just in case we receive messages in the old format,
+            we should try to parse them. We only need the content, though,
+            so just extract that and throw the rest away */
+        var last;
+        var parts = [];
+
+        // chop off all the bencoded components
+        while (msg) {
+            msg = discardBencode(msg, parts);
+        }
+
+        // grab the last component from the parts
+        // we don't need anything else
+        var contentStr = parts.slice(-1)[0];
+
+        var content = JSON.parse(contentStr);
+        var message;
+        if (content[0] === PATCH) {
+            message = create(userName, PATCH, Patch.fromObj(content[1]), content[2]);
+        } else if ([4,5].indexOf(content[0]) !== -1 /* === PING || content[0] === PONG*/) {
+            // it's a ping or pong, which we don't want to support anymore
+            message = create(userName, content[0], content[1]);
+        } else {
+            message = create(userName, content[0]);
+        }
+
+        // This check validates every operation in the patch.
+        check(message);
+
+        return message
     }
-
-    // This check validates every operation in the patch.
-    check(message);
-
-    return message
-}
 };
 
 var hashOf = Message.hashOf = function (msg) {
     if (Common.PARANOIA) { check(msg); }
-    var authToken = msg.authToken;
-    msg.authToken = '';
     var hash = Sha.hex_sha256(toString(msg));
-    msg.authToken = authToken;
     return hash;
 };
