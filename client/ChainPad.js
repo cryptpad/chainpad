@@ -35,7 +35,7 @@ var enterChainPad = function (realtime, func) {
 
 var debug = function (realtime, msg) {
     if (realtime.logLevel > 0) {
-        console.log("[" + realtime.userName + "]  " + msg);
+        console.log("[" + (realtime.userName || 'nameless user') + "]  " + msg);
     }
 };
 
