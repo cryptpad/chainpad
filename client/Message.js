@@ -25,10 +25,11 @@ var REGISTER     = Message.REGISTER     = 0;
 var REGISTER_ACK = Message.REGISTER_ACK = 1;
 var PATCH        = Message.PATCH        = 2;
 var DISCONNECT   = Message.DISCONNECT   = 3;
+var CHECKPOINT   = Message.CHECKPOINT   = 4;
 
 var check = Message.check = function(msg) {
     Common.assert(msg.type === 'Message');
-    if (msg.messageType === PATCH) {
+    if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
         Patch.check(msg.content);
         Common.assert(typeof(msg.lastMsgHash) === 'string');
     } else {
@@ -49,9 +50,8 @@ var create = Message.create = function (type, content, lastMsgHash) {
 
 var toString = Message.toString = function (msg) {
     if (Common.PARANOIA) { check(msg); }
-
-    if (msg.messageType === PATCH) {
-        return JSON.stringify([PATCH, Patch.toObj(msg.content), msg.lastMsgHash]);
+    if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
+        return JSON.stringify([msg.messageType, Patch.toObj(msg.content), msg.lastMsgHash]);
     } else {
         throw new Error();
     }
@@ -68,43 +68,11 @@ var discardBencode = function (msg, arr) {
 };
 
 var fromString = Message.fromString = function (str) {
-    var msg = str;
-
-    if (str.charAt(0) === '[') {
-        var m = JSON.parse(str);
-        return create(m[0], Patch.fromObj(m[1]), m[2]);
-    } else {
-        /*  Just in case we receive messages in the old format,
-            we should try to parse them. We only need the content, though,
-            so just extract that and throw the rest away */
-        var last;
-        var parts = [];
-
-        // chop off all the bencoded components
-        while (msg) {
-            msg = discardBencode(msg, parts);
-        }
-
-        // grab the last component from the parts
-        // we don't need anything else
-        var contentStr = parts.slice(-1)[0];
-
-        var content = JSON.parse(contentStr);
-        var message;
-        if (content[0] === PATCH) {
-            message = create(userName, PATCH, Patch.fromObj(content[1]), content[2]);
-        } else if ([4,5].indexOf(content[0]) !== -1 /* === PING || content[0] === PONG*/) {
-            // it's a ping or pong, which we don't want to support anymore
-            message = create(userName, content[0], content[1]);
-        } else {
-            message = create(userName, content[0]);
-        }
-
-        // This check validates every operation in the patch.
-        check(message);
-
-        return message
-    }
+    var m = JSON.parse(str);
+    if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
+    var msg = create(m[0], Patch.fromObj(m[1]), m[2]);
+    if (m[0] === CHECKPOINT) { msg.content.isCheckpoint = true; }
+    return msg;
 };
 
 var hashOf = Message.hashOf = function (msg) {

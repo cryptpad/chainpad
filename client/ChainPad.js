@@ -26,6 +26,13 @@ var ChainPad = {};
 var EMPTY_STR_HASH = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 var ZERO =           '0000000000000000000000000000000000000000000000000000000000000000';
 
+// Default number of patches between checkpoints (patches older than this will be pruned)
+// default for realtime.config.checkpointInterval
+var DEFAULT_CHECKPOINT_INTERVAL = 200;
+
+// Default number of milliseconds to wait before syncing to the server
+var DEFAULT_AVERAGE_SYNC_MILLISECONDS = 500;
+
 var enterChainPad = function (realtime, func) {
     return function () {
         if (realtime.failed) { return; }
@@ -40,8 +47,9 @@ var debug = function (realtime, msg) {
 };
 
 var schedule = function (realtime, func, timeout) {
+    if (realtime.aborted) { return; }
     if (!timeout) {
-        timeout = Math.floor(Math.random() * 2 * realtime.avgSyncTime);
+        timeout = Math.floor(Math.random() * 2 * realtime.config.avgSyncMilliseconds);
     }
     var to = setTimeout(enterChainPad(realtime, function () {
         realtime.schedules.splice(realtime.schedules.indexOf(to), 1);
@@ -71,13 +79,66 @@ var onMessage = function (realtime, message, callback) {
     }
 };
 
+var sendMessage = function (realtime, msg, callback) {
+    var strMsg = Message.toString(msg);
+
+    onMessage(realtime, strMsg, function (err) {
+        if (err) {
+            debug(realtime, "Posting to server failed [" + err + "]");
+            realtime.pending = null;
+        } else {
+            var pending = realtime.pending;
+            realtime.pending = null;
+            Common.assert(pending.hash === msg.hashOf);
+            handleMessage(realtime, strMsg, true);
+            pending.callback();
+        }
+    });
+
+    msg.hashOf = msg.hashOf || Message.hashOf(msg);
+
+    var timeout = schedule(realtime, function () {
+        debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
+        sync(realtime);
+    }, 10000 + (Math.random() * 5000));
+
+    if (realtime.pending) { throw new Error("there is already a pending message"); }
+    realtime.pending = {
+        hash: msg.hashOf,
+        callback: function () {
+            if (realtime.initialMessage && realtime.initialMessage.hashOf === msg.hashOf) {
+                debug(realtime, "initial Ack received [" + msg.hashOf + "]");
+                realtime.initialMessage = null;
+            }
+            unschedule(realtime, timeout);
+            realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
+            callback();
+        }
+    };
+    if (Common.PARANOIA) { check(realtime); }
+};
+
 var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
-    if (realtime.syncSchedule) {
+    if (realtime.syncSchedule && !realtime.pending) {
         unschedule(realtime, realtime.syncSchedule);
         realtime.syncSchedule = null;
     } else {
+        //debug(realtime, "already syncing...");
         // we're currently waiting on something from the server.
+        return;
+    }
+
+    if (((parentCount(realtime, realtime.best) + 1) % realtime.config.checkpointInterval) === 0) {
+        var best = realtime.best;
+        debug(realtime, "Sending checkpoint");
+        var cpp = Patch.createCheckpoint(realtime.authDoc,
+                                         realtime.authDoc,
+                                         realtime.best.content.inverseOf.parentHash);
+        var cp = Message.create(Message.CHECKPOINT, cpp, realtime.best.hashOf);
+        sendMessage(realtime, cp, function () {
+            debug(realtime, "Checkpoint sent and accepted");
+        });
         return;
     }
 
@@ -97,39 +158,16 @@ var sync = function (realtime) {
         msg = Message.create(Message.PATCH, realtime.uncommitted, realtime.best.hashOf);
     }
 
-    var strMsg = Message.toString(msg);
-
-    onMessage(realtime, strMsg, function (err) {
-        if (err) {
-            debug(realtime, "Posting to server failed [" + err + "]");
-        } else {
-            handleMessage(realtime, strMsg, true);
-        }
+    sendMessage(realtime, msg, function () {
+        debug(realtime, "patch sent");
     });
-
-    var hash = Message.hashOf(msg);
-
-    var timeout = schedule(realtime, function () {
-        debug(realtime, "Failed to send message ["+hash+"] to server");
-        sync(realtime);
-    }, 10000 + (Math.random() * 5000));
-    realtime.pending = {
-        hash: hash,
-        callback: function () {
-            if (realtime.initialMessage && realtime.initialMessage.hashOf === hash) {
-                debug(realtime, "initial Ack received ["+hash+"]");
-                realtime.initialMessage = null;
-            }
-            unschedule(realtime, timeout);
-            realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
-        }
-    };
-    if (Common.PARANOIA) { check(realtime); }
 };
 
 var create = ChainPad.create = function (config) {
     config = config || {};
     var initialState = config.initialState || '';
+    config.checkpointInterval = config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL;
+    config.avgSyncMilliseconds = config.avgSyncMilliseconds || DEFAULT_AVERAGE_SYNC_MILLISECONDS;
 
     var realtime = {
         type: 'ChainPad',
@@ -151,6 +189,7 @@ var create = ChainPad.create = function (config) {
         messageHandlers: [],
 
         schedules: [],
+        aborted: false,
 
         syncSchedule: null,
 
@@ -336,25 +375,13 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
 
-    // These are all deprecated message types
-    if (['REGISTER', 'PONG', 'DISCONNECT'].map(function (x) {
-        return Message[x];
-    }).indexOf(msg.messageType) !== -1) {
-        console.log("Deprecated message type: [%s]", msg.messageType);
+    // otherwise it's a disconnect.
+    if (msg.messageType !== Message.PATCH && msg.messageType !== Message.CHECKPOINT) {
+        debug(realtime, "unrecognized message type " + msg.messageType);
         return;
     }
 
-    // otherwise it's a disconnect.
-    if (msg.messageType !== Message.PATCH) {
-        console.error("disconnect");
-        return; }
-
     msg.hashOf = Message.hashOf(msg);
-
-    if (realtime.pending && realtime.pending.hash === msg.hashOf) {
-        realtime.pending.callback();
-        realtime.pending = null;
-    }
 
     if (realtime.messages[msg.hashOf]) {
         debug(realtime, "Patch [" + msg.hashOf + "] is already known");
@@ -436,14 +463,43 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         return;
     }
 
-    var simplePatch =
-        Patch.simplify(patch, authDocAtTimeOfPatch, realtime.config.operationSimplify);
-    if (!Patch.equals(simplePatch, patch)) {
-        debug(realtime, "patch [" + msg.hashOf + "] can be simplified");
-        if (Common.PARANOIA) { check(realtime); }
-        if (Common.TESTING) { throw new Error(); }
-        delete realtime.messages[msg.hashOf];
-        return;
+    if (patch.isCheckpoint) {
+        // Ok, we have a checkpoint patch.
+        // If the chain length is not equal to checkpointInterval then this patch is invalid.
+        var i = 0;
+        var checkpointP;
+        for (var m = getParent(realtime, msg); m; m = getParent(realtime, m)) {
+            i++;
+            if (m.content.isCheckpoint && m !== msg) {
+                checkpointP = m;
+            }
+        }
+        if ((i % realtime.config.checkpointInterval) !== 0) {
+            debug(realtime, "checkpoint [" + msg.hashOf + "] at invalid point [" + i + "]");
+            if (Common.PARANOIA) { check(realtime); }
+            if (Common.TESTING) { throw new Error(); }
+            delete realtime.messages[msg.hashOf];
+            return;
+        }
+        if (checkpointP && checkpointP !== realtime.rootMessage) {
+            // Time to prune some old messages from the chain
+            for (var m = getParent(realtime, checkpointP); m; m = getParent(realtime, m)) {
+                debug(realtime, "pruning [" + m.hashOf + "]");
+                delete realtime.messages[m.hashOf];
+                delete realtime.messagesByParent[m.hashOf];
+            }
+            realtime.rootMessage = checkpointP;
+        }
+    } else {
+        var simplePatch =
+            Patch.simplify(patch, authDocAtTimeOfPatch, realtime.config.operationSimplify);
+        if (!Patch.equals(simplePatch, patch)) {
+            debug(realtime, "patch [" + msg.hashOf + "] can be simplified");
+            if (Common.PARANOIA) { check(realtime); }
+            if (Common.TESTING) { throw new Error(); }
+            delete realtime.messages[msg.hashOf];
+            return;
+        }
     }
 
     patch.inverseOf = Patch.invert(patch, authDocAtTimeOfPatch);
@@ -498,6 +554,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             }
         }
     }
+
     if (Common.PARANOIA) { check(realtime); }
 };
 
@@ -548,20 +605,25 @@ module.exports.create = function (conf) {
             Common.assert(typeof(handler) === 'function');
             realtime.messageHandlers.push(handler);
         }),
+
         message: enterChainPad(realtime, function (message) {
             handleMessage(realtime, message, false);
         }),
+
         start: enterChainPad(realtime, function () {
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         }),
+
         abort: enterChainPad(realtime, function () {
+            realtime.aborted = true;
             realtime.schedules.forEach(function (s) { clearTimeout(s) });
         }),
-        sync: enterChainPad(realtime, function () {
-            sync(realtime);
-        }),
+
+        sync: enterChainPad(realtime, function () { sync(realtime); }),
+
         getAuthDoc: function () { return realtime.authDoc; },
+
         getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); },
 
         getDepthOfState: function (content, minDepth) {

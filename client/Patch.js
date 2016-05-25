@@ -24,7 +24,8 @@ var create = Patch.create = function (parentHash) {
     return {
         type: 'Patch',
         operations: [],
-        parentHash: parentHash
+        parentHash: parentHash,
+        isCheckpoint: false
     };
 };
 
@@ -39,6 +40,13 @@ var check = Patch.check = function (patch, docLength_opt) {
         }
         if (typeof(docLength_opt) === 'number') {
             docLength_opt += Operation.lengthChange(patch.operations[i]);
+        }
+    }
+    if (patch.isCheckpoint) {
+        Common.assert(patch.operations.length === 1);
+        Common.assert(patch.operations[0].offset === 0);
+        if (typeof(docLength_opt) === 'number') {
+            Common.assert(!docLength_opt || patch.operations[0].toRemove === docLength_opt);
         }
     }
 };
@@ -98,6 +106,20 @@ var addOperation = Patch.addOperation = function (patch, op) {
     }
     patch.operations.push(op);
     if (Common.PARANOIA) { check(patch); }
+};
+
+var createCheckpoint = Patch.createCheckpoint =
+    function (parentContent, checkpointContent, parentContentHash_opt)
+{
+    var op = Operation.create(0, parentContent.length, checkpointContent);
+    if (Common.PARANOIA && parentContentHash_opt) {
+        Common.assert(parentContentHash_opt === hash(parentContent));
+    }
+    parentContentHash_opt = parentContentHash_opt || hash(parentContent);
+    var out = create(parentContentHash_opt);
+    addOperation(out, op);
+    out.isCheckpoint = true;
+    return out;
 };
 
 var clone = Patch.clone = function (patch) {

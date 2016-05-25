@@ -46,9 +46,8 @@ var registerNode = function (name, initialDoc) {
         userName: name,
         initialState: initialDoc
     });
-    onMsg = rt.onMessage;
     var handlers = [];
-    onMsg(function (msg, cb) {
+    rt.onMessage(function (msg, cb) {
         setTimeout(function () {
             handlers.forEach(function (handler) { handler(msg, cb); });
         });
@@ -113,11 +112,10 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
 
     var onMsg = function (rt, msg, cb) {
         messages++;
-        var m = msg.replace(/^1:y/, '');
         var destRt = (rt === rtA) ? rtB : rtA;
         fakeSetTimeout(function () {
             messages--;
-            destRt.queue.push(m);
+            destRt.queue.push(msg);
             fakeSetTimeout(function () {
                 destRt.message(destRt.queue.shift());
                 cb();
@@ -128,6 +126,7 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
         rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb) });
         rt.start();
     });
+    //[rtA, rtB].forEach(function (rt) { rt.start(); });
 
     var i = 0;
     var to = setInterval(function () {
@@ -140,8 +139,8 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
                 rtA.sync();
                 rtB.sync();
                 if (messages === 0 && rtA.queue.length === 0 && rtB.queue.length === 0 && flushCounter++ > 100) {
-                    console.log(rtA.doc);
-                    console.log(rtB.doc);
+                    console.log(rtA.getUserDoc());
+                    console.log(rtB.getUserDoc());
                     Common.assert(rtA.doc === rtB.doc);
                     rtA.abort();
                     rtB.abort();
@@ -252,13 +251,13 @@ var checkVersionInChain = function (callback) {
     var to = setInterval(function () {
 // on the 51st change, grab the doc
         if (i === 50) {
-            oldUserDoc = rt.getUserDoc();
+            oldAuthDoc = rt.getAuthDoc();
         }
 // on the 100th random change, check whether the 50th existed before
         if (i++ > 100) {
             clearTimeout(to);
-            Common.assert(rt.getDepthOfState(oldUserDoc) !== -1);
-            Common.assert(rt.getDepthOfState(rt.getUserDoc()) !== -1)
+            Common.assert(rt.getDepthOfState(oldAuthDoc) !== -1);
+            Common.assert(rt.getDepthOfState(rt.getAuthDoc()) !== -1)
             rt.abort();
             callback();
             return;
@@ -279,7 +278,7 @@ var whichStateIsDeeper = function (callback) {
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;
-        cb(); // must be sync because of the setInterval below
+        cb();
     });
     rt.start();
 
@@ -293,10 +292,10 @@ var whichStateIsDeeper = function (callback) {
     var to = setInterval(function () {
         if (i === 25) {
             // grab docO
-            docO = rt.getUserDoc();
+            docO = rt.getAuthDoc();
         } else if (i === 50) {
             // grab docA
-            docA = rt.getUserDoc();
+            docA = rt.getAuthDoc();
             console.log("Got Document A");
             console.log(docA);
 
@@ -304,7 +303,7 @@ var whichStateIsDeeper = function (callback) {
             Common.assert(rt.getDepthOfState(docO) === 25);
         } else if (i === 75) {
             // grab docB
-            docB = rt.getUserDoc();
+            docB = rt.getAuthDoc();
             console.log("Got Document B");
             console.log(docB);
 
@@ -313,6 +312,7 @@ var whichStateIsDeeper = function (callback) {
             Common.assert(rt.getDepthOfState(docA) === 25);
             Common.assert(rt.getDepthOfState(docO) === 50);
         } else if (i >= 100) {
+            console.log("Completed");
             // finish
             clearTimeout(to);
 

@@ -29,21 +29,7 @@ This will run the tests and concatinate the js files into the resulting `chainpa
 ## The API
 
 ```javascript
-/**
- * @param user The name of the user, passed to the server and to all other clients.
- *             Must be unique per-user because when you receive back a patch from the
- *             server which is one of your own, it is treated specially.
- * @param pass A password or API key which will be passed to the server but not to other
- *             clients. If security is not required, a trivial string may be used.
- * @param channel A string representing the document to be edited in case the server
- *                supports multiple documents.
- * @param initialState Optional parameter representing the state of the document at the
- *                     beginning of the chainpad session or an empty string if not
- *                     applicable. If one user joins with a different initialState than
- *                     another, the situation will be resolved as an ordenary conflict.
- * @return a new ChainPad engine.
- */
-var chainpad = ChainPad.create(user, pass, channel, initState);
+var chainpad = ChainPad.create(config);
 
 // The bindings are not included in the engine, see below.
 bindToDataTransport(chainpad);
@@ -52,8 +38,21 @@ bindToUserInterface(chainpad);
 chainpad.start();
 ```
 
-**initialState** can be downloaded from a seperate storage server to the server which hosts the
-backend websocket and the same websocket server could be used for many websites.
+### Configuration Parameters
+
+Config is an *optional* object parameter which may have one or more of the following contents.
+**NOTE:** it's critical that every ChainPad instance in the session has the same values for these
+parameters.
+
+* **initialState** (string) content to start off the pad with, default is empty-string.
+* **checkpointInterval** (number) the number of patches which should be allowed to go across the
+wire before sending a checkpoint. A small number will result in lots of sending of checkpoints
+which are necessarily large because they send the whole document in the message. A large number
+will result in more patches to download for a new person joining the pad.
+* **avgSyncMilliseconds** (number) the number of milliseconds to wait before sending to the server
+if there is anything to be sent. Making this number smaller will cause lots of patches to be sent
+(however the number will be limited by the RTT to the server because ChainPad will only keep one
+unacknoledged message on the wire at a time).
 
 
 ## Binding the ChainPad Session to the Data Transport
@@ -69,41 +68,30 @@ when a message is to be sent.
 ```javascript
 var socket = new WebSocket("ws://your.server:port/");
 socket.onopen = function(evt) {
-  socket.onmessage = function (evt) { chainpad.message(evt.data); };
-  chainpad.onMessage(function (message) { socket.send(message); });
+    socket.onmessage = function (evt) { chainpad.message(evt.data); };
+    chainpad.onMessage(function (message, cb) {
+        socket.send(message);
+        // Really the callback should only be called after you are sure the server has the patch.
+        cb();
+    });
 });
 ```
 
-## Binding the ChainPad Session to the User Interface
-
-* Register a function to be called when the chainpad engine wants to remove characters from the
-document.
-```javascript
-chainpad.onRemove(function(position, length) {});
-```
-
-* Register a function to be called when the chainpad engine wants to insert characters in the
-document.
-```javascript
-chainpad.onInsert(function(position, text) {});
-```
+### Binding the ChainPad Session to the User Interface
 
 * Register a function to handle a patch to the document, a patch is a series of insertions and
 deletions which may must be applied atomically. When applying, the operations in the patch must
-be applied in *decending* order, from highest index to zero. The operations in the patch will
-also be sent to whichever functions have been registered with **onInsert()** and **onRemove()**.
+be applied in *decending* order, from highest index to zero. For more information about Patch,
+see `chainpad.Patch`.
 ```javascript
 chainpad.onPatch(function(patch) {});
 ```
 
-* Signal the chainpad engine that the user has removed text from the document.
+* Signal the chainpad engine that the user has inserted and/or removed content to/from the document.
+The Patch object can be constructed using Patch.create and Operations can be added to the patch
+using Operation.create and Patch.addOperation(). See **ChainPad Internals** for more information.
 ```javascript
-chainpad.remove(position, length);
-```
-
-* Signal the chainpad engine that the user has added text to the document.
-```javascript
-chainpad.insert(/*Number*/position, textString);
+chainpad.patch(patch);
 ```
 
 ## Control Functions
@@ -115,7 +103,7 @@ binding.
 
 ### chainpad.abort()
 
-Stop the engine forcefully, data will not be saved.
+Stop the engine, no more messages will be sent, even if there is *Uncommitted Work*.
 
 ### chainpad.sync()
 
@@ -130,22 +118,26 @@ Access the *Authoritative Document*, useful for debugging.
 
 Access the document which the engine believes is in the user interface, this is equivilant to
 the *Authoritative Document* with the *Uncommitted Work* patch applied. Useful for debugging.
+This should be equivilant to the string representation of the content which is in the UI.
 
 ### chainpad.getDepthOfState(state [,minDepth])
 
-Determine how deep a particular state is in the chain _relative to the current state_.
+Determine how deep a particular state is in the chain _relative to the current state_. Depth means
+the number of patches.
 
 ```javascript
-// the userDoc is 0 patches deep, by definition
-0 === chainpad.getDepthOfState(chainpad.getUserDoc());
+// the authDoc is 0 patches deep, by definition
+0 === chainpad.getDepthOfState(chainpad.getAuthDoc());
 
 // if a state never existed in the chain, return value is -1
 -1 === chainpad.getDepthOfState("said no one ever");
 // ^^ assuming the state of the document was never "said no one ever"
 ```
 
-You can specify a minimum depth to traverse, if the specified state is encountered shallower than
-the specified depth, it will be ignored.
+You can specify a minimum depth to traverse, skip forward (down) this number of patches before
+starting to try to match the specified content. This allows you to see multiple times in history
+when the content was equal to the specified content. This function will not detect depth of states
+older than the second checkpoint because this is pruned.
 
 ```javascript
 // determine the last time the userDoc was 'pewpew'
@@ -159,9 +151,6 @@ if (chainpad.getDepthOfState('pewpew', firstEncounter) !== -1) {
 }
 ```
 
-You can also use this to determine the length of the document's history.
-Supplying the initial state will return one less than the length of the chain.
-
 # Internals
 
 ## Data Types
@@ -170,7 +159,7 @@ Supplying the initial state will return one less than the length of the chain.
 An Operation can contain both insertion and deletion and in this case, the deletion will occur
 first.
 * **Patch**: A list of **Operations** to be applied to the document in order and a hash of the
-document content at the previous state (before the patch is applied). 
+document content at the previous state (before the patch is applied).
 * **Message**: Either a request to register the user, an announcement of a user having joined the
 document or an encapsulation of a **Patch** to be sent over the wire.
 
@@ -234,6 +223,12 @@ detects that it's own patch has been reverted, the content will be re-added to t
 The initial startup of the engine, the server is asked for all of the **Messages** to date. These
 are filtered through the engine as with any other incoming **Message** in a process which Bitcoin
 developers will recognize as "syncing the chain".
+
+A special type of **Patch** is known as a **Checkpoint** and a checkpoint always removes and re-adds
+all content to the pad. The server may detect checkpoint patches because they are represented on
+the wire as an array with a 4 as the first element. In order to improve performance of new users
+joining the pad and "syncing" the chain, the server may send only the second most recent checkpoint
+and all patches newer than that.
 
 
 ## Relationship to Bitcoin
