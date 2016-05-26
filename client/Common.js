@@ -21,7 +21,7 @@ var PARANOIA = module.exports.PARANOIA = true;
 var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG = false;
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-var TESTING = module.exports.TESTING = true;
+var TESTING = module.exports.TESTING = false;
 
 var assert = module.exports.assert = function (expr) {
     if (!expr) { throw new Error("Failed assertion"); }

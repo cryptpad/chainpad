@@ -79,6 +79,26 @@ socket.onopen = function(evt) {
 
 ### Binding the ChainPad Session to the User Interface
 
+* Register a function to handle *changes* to the document, a change comprises an offset, a number
+of characters to be removed and a number of characters to be inserted. This is the easiest way
+to interact with ChainPad.
+```javascript
+var myContent = '';
+chainpad.onChange(function (offset, toRemove, toInsert) {
+    myContent = myContent.substring(0, offset) + toInsert + myContent.substring(offset + toRemove);
+});
+```
+
+* Signal to chainpad engine that the user has inserted and/or removed content with the *change()*
+function.
+```javascript
+var chainpad = ChainPad.create();
+chainpad.change(0, 0, "Hello world");
+console.log(chainpad.getUserDoc()); // -> "Hello world"
+chainpad.change(0, 5, "Goodbye cruel");
+console.log(chainpad.getUserDoc()); // -> "Goodbye cruel world"
+```
+
 * Register a function to handle a patch to the document, a patch is a series of insertions and
 deletions which may must be applied atomically. When applying, the operations in the patch must
 be applied in *decending* order, from highest index to zero. For more information about Patch,
@@ -112,7 +132,8 @@ committed, just that it has attempted to send it to the server.
 
 ### chainpad.getAuthDoc()
 
-Access the *Authoritative Document*, useful for debugging.
+Access the *Authoritative Document*, this is the content which everybody has agreed upon and has
+been entered into the chain.
 
 ### chainpad.getUserDoc()
 

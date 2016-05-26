@@ -20,6 +20,8 @@ var Operation = require('./Operation');
 var Sha = require('./SHA256');
 var nThen = require('nthen');
 
+ChainPad.Common.TESTING = true;
+
 var startup = function (callback) {
     var rt = ChainPad.create({
         userName: 'x',
@@ -30,7 +32,7 @@ var startup = function (callback) {
 };
 
 var runOperation = function (realtimeFacade, op) {
-    realtimeFacade.patch(op.offset, op.toRemove, op.toInsert);
+    realtimeFacade.change(op.offset, op.toRemove, op.toInsert);
 };
 
 var insert = function (doc, offset, chars) {
@@ -41,11 +43,12 @@ var remove = function (doc, offset, count) {
     return doc.substring(0,offset) + doc.substring(offset+count);
 };
 
-var registerNode = function (name, initialDoc) {
-    var rt = ChainPad.create({
-        userName: name,
-        initialState: initialDoc
-    });
+var registerNode = function (name, initialDoc, conf) {
+    conf = conf || {};
+    conf.userName = conf.userName || name;
+    var rt = ChainPad.create(conf);
+    rt.change(0, 0, initialDoc);
+
     var handlers = [];
     rt.onMessage(function (msg, cb) {
         setTimeout(function () {
@@ -193,7 +196,7 @@ var syncCycle = function (messages, finalDoc, name, callback) {
 
 var outOfOrderSync = function (callback) {
     var messages = [];
-    var rtA = registerNode('outOfOrderSync()', '');
+    var rtA = registerNode('outOfOrderSync()', '', { checkpointInterval: 1000 });
     rtA.onMessage(function (msg, cb) {
         setTimeout(cb);
         messages.push(msg);
