@@ -363,10 +363,10 @@ var pushUIPatch = function (realtime, patch) {
     }
 };
 
-var validContent = function (realtime, content) {
-    if (!realtime.config.validateContent) { return false; }
+var validContent = function (realtime, contentGetter) {
+    if (!realtime.config.validateContent) { return true; }
     try {
-        return realtime.validateContent(content);
+        return realtime.validateContent(contentGetter());
     } catch (e) {
         warn(realtime, "Error in content validator [" + e.stack + "]");
     }
@@ -391,7 +391,9 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         return;
     }
 
-    if (msg.content.isCheckpoint && !validContent(realtime, msg.content.operations[0].toInsert)) {
+    if (msg.content.isCheckpoint &&
+        !validContent(realtime, function () { return msg.content.operations[0].toInsert }))
+    {
         // If it's not a checkpoint, we verify it later on...
         debug(realtime, "Checkpoint [" + msg.hashOf + "] failed content validation");
         return;
@@ -538,7 +540,9 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             return;
         }
 
-        if (!validContent(realtime, Patch.apply(patch, authDocAtTimeOfPatch)) {
+        if (!validContent(realtime,
+            function () { return Patch.apply(patch, authDocAtTimeOfPatch); }))
+        {
             debug(realtime, "Patch [" + msg.hashOf + "] failed content validation");
             return;
         }
