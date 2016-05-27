@@ -53,6 +53,9 @@ will result in more patches to download for a new person joining the pad.
 if there is anything to be sent. Making this number smaller will cause lots of patches to be sent
 (however the number will be limited by the RTT to the server because ChainPad will only keep one
 unacknoledged message on the wire at a time).
+* **validateContent** (function) if specified, this function will be called during each patch and
+receive the content of the document after the patch, if the document has semantic requirements
+then this function can validate them if they are broken then the patch will be rejected.
 
 
 ## Binding the ChainPad Session to the Data Transport

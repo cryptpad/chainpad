@@ -217,10 +217,6 @@ var create = ChainPad.create = function (config) {
     }
 
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
-    if (initialState !== '') {
-        var initialOp = Operation.create(0, 0, initialState);
-        Patch.addOperation(zeroPatch, initialOp);
-    }
     zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
     zeroPatch.inverseOf.inverseOf = zeroPatch;
     var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
@@ -230,8 +226,10 @@ var create = ChainPad.create = function (config) {
     (realtime.messagesByParent[zeroMsg.lastMessageHash] || []).push(zeroMsg);
     realtime.rootMessage = zeroMsg;
     realtime.best = zeroMsg;
-    realtime.authDoc = initialState;
     realtime.uncommitted = Patch.create(zeroPatch.inverseOf.parentHash);
+    if (initialState !== '') {
+        Patch.addOperation(realtime.uncommitted, Operation.create(0, 0, initialState));
+    }
 
     if (Common.PARANOIA) {
         realtime.userInterfaceContent = initialState;
@@ -365,12 +363,21 @@ var pushUIPatch = function (realtime, patch) {
     }
 };
 
+var validContent = function (realtime, content) {
+    if (!realtime.config.validateContent) { return false; }
+    try {
+        return realtime.validateContent(content);
+    } catch (e) {
+        warn(realtime, "Error in content validator [" + e.stack + "]");
+    }
+    return false;
+};
+
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
 
-    // otherwise it's a disconnect.
     if (msg.messageType !== Message.PATCH && msg.messageType !== Message.CHECKPOINT) {
         debug(realtime, "unrecognized message type " + msg.messageType);
         return;
@@ -381,6 +388,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (realtime.messages[msg.hashOf]) {
         debug(realtime, "Patch [" + msg.hashOf + "] is already known");
         if (Common.PARANOIA) { check(realtime); }
+        return;
+    }
+
+    if (msg.content.isCheckpoint && !validContent(realtime, msg.content.operations[0].toInsert)) {
+        // If it's not a checkpoint, we verify it later on...
+        debug(realtime, "Checkpoint [" + msg.hashOf + "] failed content validation");
         return;
     }
 
@@ -522,6 +535,11 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             if (Common.PARANOIA) { check(realtime); }
             if (Common.TESTING) { throw new Error(); }
             delete realtime.messages[msg.hashOf];
+            return;
+        }
+
+        if (!validContent(realtime, Patch.apply(patch, authDocAtTimeOfPatch)) {
+            debug(realtime, "Patch [" + msg.hashOf + "] failed content validation");
             return;
         }
     }
