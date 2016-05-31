@@ -248,12 +248,24 @@ var create = ChainPad.create = function (config) {
     var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
     zeroMsg.hashOf = Message.hashOf(zeroMsg);
     zeroMsg.parentCount = 0;
+    zeroMsg.isInitialMessage = true;
     storeMessage(realtime, zeroMsg);
     realtime.rootMessage = zeroMsg;
     realtime.best = zeroMsg;
-    realtime.uncommitted = Patch.create(zeroPatch.inverseOf.parentHash);
+
     if (initialState !== '') {
-        Patch.addOperation(realtime.uncommitted, Operation.create(0, 0, initialState));
+        var initPatch = Patch.create(EMPTY_STR_HASH);
+        initPatch.inverseOf = Patch.invert(initPatch, '');
+        initPatch.inverseOf.inverseOf = initPatch;
+        Patch.addOperation(initPatch, Operation.create(0, 0, initialState));
+        var initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
+        initMsg.hashOf = Message.hashOf(initMsg);
+        initMsg.isInitialMessage = true;
+        storeMessage(realtime, initMsg);
+        realtime.best = initMsg;
+        realtime.uncommitted = Patch.create(initPatch.inverseOf.parentHash);
+    } else {
+        realtime.uncommitted = Patch.create(EMPTY_STR_HASH);
     }
 
     if (Common.PARANOIA) {
@@ -433,7 +445,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     storeMessage(realtime, msg);
 
     if (!isAncestorOf(realtime, realtime.rootMessage, msg)) {
-        if (realtime.rootMessage === realtime.best && msg.content.isCheckpoint) {
+        if (msg.content.isCheckpoint && realtime.best.isInitialMessage) {
             // We're starting with a trucated chain from a checkpoint, we will adopt this
             // as the root message and go with it...
             var userDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
