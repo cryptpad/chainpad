@@ -111,10 +111,6 @@ var sendMessage = function (realtime, msg, callback) {
     realtime.pending = {
         hash: msg.hashOf,
         callback: function () {
-            if (realtime.initialMessage && realtime.initialMessage.hashOf === msg.hashOf) {
-                debug(realtime, "initial Ack received [" + msg.hashOf + "]");
-                realtime.initialMessage = null;
-            }
             unschedule(realtime, timeout);
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
             callback();
@@ -157,14 +153,18 @@ var sync = function (realtime) {
     }
 
     var msg;
-    if (realtime.best === realtime.initialMessage) {
-        msg = realtime.initialMessage;
+    if (realtime.setContentPatch) {
+        msg = realtime.setContentPatch;
     } else {
         msg = Message.create(Message.PATCH, realtime.uncommitted, realtime.best.hashOf);
     }
 
     sendMessage(realtime, msg, function () {
         //debug(realtime, "patch sent");
+        if (realtime.setContentPatch) {
+            debug(realtime, "initial Ack received [" + msg.hashOf + "]");
+            realtime.setContentPatch = null;
+        }
     });
 };
 
@@ -225,6 +225,11 @@ var create = ChainPad.create = function (config) {
         // this is only used if PARANOIA is enabled.
         userInterfaceContent: undefined,
 
+        // If we want to set the content to a particular thing, this patch will be sent across the
+        // wire. If the patch is not accepted we will not try to recover it. This is used for
+        // setting initial state.
+        setContentPatch: null,
+
         failed: false,
 
         // hash and callback for previously send patch, currently in flight.
@@ -237,10 +242,6 @@ var create = ChainPad.create = function (config) {
 
         userName: config.userName || 'anonymous',
     };
-
-    if (Common.PARANOIA) {
-        realtime.userInterfaceContent = initialState;
-    }
 
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
@@ -255,18 +256,18 @@ var create = ChainPad.create = function (config) {
 
     if (initialState !== '') {
         var initPatch = Patch.create(EMPTY_STR_HASH);
+        Patch.addOperation(initPatch, Operation.create(0, 0, initialState));
         initPatch.inverseOf = Patch.invert(initPatch, '');
         initPatch.inverseOf.inverseOf = initPatch;
-        Patch.addOperation(initPatch, Operation.create(0, 0, initialState));
         var initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
         initMsg.hashOf = Message.hashOf(initMsg);
         initMsg.isInitialMessage = true;
         storeMessage(realtime, initMsg);
         realtime.best = initMsg;
-        realtime.uncommitted = Patch.create(initPatch.inverseOf.parentHash);
-    } else {
-        realtime.uncommitted = Patch.create(EMPTY_STR_HASH);
+        realtime.authDoc = initialState;
+        realtime.setContentPatch = initMsg;
     }
+    realtime.uncommitted = Patch.create(realtime.best.content.inverseOf.parentHash);
 
     if (Common.PARANOIA) {
         realtime.userInterfaceContent = initialState;

@@ -46,8 +46,9 @@ var remove = function (doc, offset, count) {
 var registerNode = function (name, initialDoc, conf) {
     conf = conf || {};
     conf.userName = conf.userName || name;
+    conf.initialState = initialDoc;
     var rt = ChainPad.create(conf);
-    rt.change(0, 0, initialDoc);
+    //rt.change(0, 0, initialDoc);
 
     var handlers = [];
     rt.onMessage(function (msg, cb) {
