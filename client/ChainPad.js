@@ -29,10 +29,14 @@ var ZERO = '0000000000000000000000000000000000000000000000000000000000000000';
 
 // Default number of patches between checkpoints (patches older than this will be pruned)
 // default for realtime.config.checkpointInterval
-var DEFAULT_CHECKPOINT_INTERVAL = 200;
+var DEFAULT_CHECKPOINT_INTERVAL = 50;
 
 // Default number of milliseconds to wait before syncing to the server
 var DEFAULT_AVERAGE_SYNC_MILLISECONDS = 300;
+
+// By default, we allow checkpoints at any place but if this is set true, we will blow up on chains
+// which have checkpoints not where we expect them to be.
+var DEFAULT_STRICT_CHECKPOINT_VALIDATION = false;
 
 var enterChainPad = function (realtime, func) {
     return function () {
@@ -169,6 +173,8 @@ var create = ChainPad.create = function (config) {
     var initialState = config.initialState || '';
     config.checkpointInterval = config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL;
     config.avgSyncMilliseconds = config.avgSyncMilliseconds || DEFAULT_AVERAGE_SYNC_MILLISECONDS;
+    config.strictCheckpointValidation =
+        config.strictCheckpointValidation || DEFAULT_STRICT_CHECKPOINT_VALIDATION;
 
     var realtime = {
         type: 'ChainPad',
@@ -309,16 +315,22 @@ var parentCount = function (realtime, message) {
 var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
     Common.assert(patch.inverseOf);
-    if (isFromMe && !patch.isInitialStatePatch) {
-        var inverseOldUncommitted = Patch.invert(realtime.uncommitted, realtime.authDoc);
-        var userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
-        if (Common.PARANOIA) {
-            Common.assert(userInterfaceContent === realtime.userInterfaceContent);
-        }
-        realtime.uncommitted = Patch.merge(inverseOldUncommitted, patch);
-        realtime.uncommitted = Patch.invert(realtime.uncommitted, userInterfaceContent);
+    if (isFromMe) {
+        // Case 1: We're applying a patch which we originally created (yay our work was accepted)
+        //         We will merge the inverse of the patch with our uncommitted work in order that
+        //         we do not try to commit that work over again.
+        // Case 2: We're reverting a patch which had originally come from us, a.k.a. we're applying
+        //         the inverse of that patch.
+        //
+        // In either scenario, we want to apply the inverse of the patch we are applying, to the
+        // uncommitted work. Whatever we "add" to the authDoc we "remove" from the uncommittedWork.
+        //
+        Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
+        realtime.uncommitted = Patch.merge(patch.inverseOf, realtime.uncommitted);
 
     } else {
+        // It's someone else's patch which was received, we need to *transform* out uncommitted
+        // work over their patch in order to preserve intent as much as possible.
         realtime.uncommitted =
             Patch.transform(
                 realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
@@ -455,8 +467,10 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
                 commonAncestor = getParent(realtime, commonAncestor);
             }
             Common.assert(commonAncestor);
+            debug(realtime, "Patch [" + msg.hashOf + "] better than best chain, switching");
         } else {
-            debug(realtime, "Patch [" + msg.hashOf + "] chain is ["+pcMsg+"] best chain is ["+pcBest+"]");
+            debug(realtime, "Patch [" + msg.hashOf + "] chain is [" + pcMsg + "] best chain is [" +
+                pcBest + "]");
             if (Common.PARANOIA) { check(realtime); }
             return;
         }
@@ -512,7 +526,9 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         }
         if (checkpointP && checkpointP !== realtime.rootMessage) {
             var point = parentCount(realtime, checkpointP);
-            if ((point % realtime.config.checkpointInterval) !== 0) {
+            if (realtime.config.strictCheckpointValidation &&
+                (point % realtime.config.checkpointInterval) !== 0)
+            {
                 debug(realtime, "checkpoint [" + msg.hashOf + "] at invalid point [" + point + "]");
                 if (Common.PARANOIA) { check(realtime); }
                 if (Common.TESTING) { throw new Error(); }
@@ -563,6 +579,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
     for (var i = 0; i < toRevert.length; i++) {
         debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
+        if (toRevert[i].isFromMe) { debug(realtime, "reverting patch 'from me' [" + JSON.stringify(toRevert[i].content.operations) + "]"); }
         uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
         revertPatch(realtime, toRevert[i].isFromMe, toRevert[i].content);
     }

@@ -56,6 +56,8 @@ unacknoledged message on the wire at a time).
 * **validateContent** (function) if specified, this function will be called during each patch and
 receive the content of the document after the patch, if the document has semantic requirements
 then this function can validate them if they are broken then the patch will be rejected.
+* **strictCheckpointValidation** (boolean) if true then we will fail any checkpoint which comes
+at an interval which is not in agreement with **checkpointInterval**. Default: *false*.
 
 
 ## Binding the ChainPad Session to the Data Transport
