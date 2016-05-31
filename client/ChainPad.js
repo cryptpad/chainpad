@@ -168,6 +168,26 @@ var sync = function (realtime) {
     });
 };
 
+var storeMessage = function (realtime, msg) {
+    Common.assert(msg.lastMsgHash);
+    Common.assert(msg.hashOf);
+    realtime.messages[msg.hashOf] = msg;
+    (realtime.messagesByParent[msg.lastMsgHash] =
+        realtime.messagesByParent[msg.lastMsgHash] || []).push(msg);
+};
+
+var forgetMessage = function (realtime, msg) {
+    Common.assert(msg.lastMsgHash);
+    Common.assert(msg.hashOf);
+    delete realtime.messages[msg.hashOf];
+    var list = realtime.messagesByParent[msg.lastMsgHash];
+    Common.assert(list.indexOf(msg) > -1);
+    list.splice(list.indexOf(msg), 1);
+    if (list.length === 0) {
+        delete realtime.messagesByParent[msg.lastMsgHash];
+    }
+};
+
 var create = ChainPad.create = function (config) {
     config = config || {};
     var initialState = config.initialState || '';
@@ -228,8 +248,7 @@ var create = ChainPad.create = function (config) {
     var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
     zeroMsg.hashOf = Message.hashOf(zeroMsg);
     zeroMsg.parentCount = 0;
-    realtime.messages[zeroMsg.hashOf] = zeroMsg;
-    (realtime.messagesByParent[zeroMsg.lastMessageHash] || []).push(zeroMsg);
+    storeMessage(realtime, zeroMsg);
     realtime.rootMessage = zeroMsg;
     realtime.best = zeroMsg;
     realtime.uncommitted = Patch.create(zeroPatch.inverseOf.parentHash);
@@ -411,9 +430,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         return;
     }
 
-    realtime.messages[msg.hashOf] = msg;
-    (realtime.messagesByParent[msg.lastMsgHash] =
-        realtime.messagesByParent[msg.lastMsgHash] || []).push(msg);
+    storeMessage(realtime, msg);
 
     if (!isAncestorOf(realtime, realtime.rootMessage, msg)) {
         if (realtime.rootMessage === realtime.best && msg.content.isCheckpoint) {
@@ -506,7 +523,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         debug(realtime, "patch [" + msg.hashOf + "] parentHash is not valid");
         if (Common.PARANOIA) { check(realtime); }
         if (Common.TESTING) { throw new Error(); }
-        delete realtime.messages[msg.hashOf];
+        forgetMessage(realtime, msg);
         return;
     }
 
@@ -532,7 +549,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
                 debug(realtime, "checkpoint [" + msg.hashOf + "] at invalid point [" + point + "]");
                 if (Common.PARANOIA) { check(realtime); }
                 if (Common.TESTING) { throw new Error(); }
-                delete realtime.messages[msg.hashOf];
+                forgetMessage(realtime, msg);
                 return;
             }
 
@@ -540,8 +557,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             debug(realtime, "checkpoint [" + msg.hashOf + "]");
             for (var m = getParent(realtime, checkpointP); m; m = getParent(realtime, m)) {
                 debug(realtime, "pruning [" + m.hashOf + "]");
-                delete realtime.messages[m.hashOf];
-                delete realtime.messagesByParent[m.hashOf];
+                forgetMessage(realtime, m);
             }
             realtime.rootMessage = checkpointP;
         }
@@ -552,7 +568,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             debug(realtime, "patch [" + msg.hashOf + "] can be simplified");
             if (Common.PARANOIA) { check(realtime); }
             if (Common.TESTING) { throw new Error(); }
-            delete realtime.messages[msg.hashOf];
+            forgetMessage(realtime, msg);
             return;
         }
 
