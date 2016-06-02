@@ -1,0 +1,27 @@
+{
+  "name": "chainpad",
+  "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
+  "main": "chainpad.js",
+  "authors": [
+    "cjd@cjdns.fr",
+    "ansuz@transitiontech.ca"
+  ],
+  "license": "AGPLv3.0",
+  "keywords": [
+    "realtime",
+    "chain",
+    "synchronization"
+  ],
+  "homepage": "https://github.com/xwiki-contrib/chainpad",
+  "ignore": [
+    "**/.*",
+    "node_modules",
+    "bower_components",
+    "*test*",
+    "tests",
+    "client",
+    "server",
+    "do",
+    "make.js"
+  ]
+}
