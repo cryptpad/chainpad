@@ -242,7 +242,7 @@ var outOfOrderSync = function (callback) {
 var checkVersionInChain = function (callback) {
     var doc = '';
 // create a chainpad
-    var rt = registerNode('checkVersionInChain()', '');
+    var rt = registerNode('checkVersionInChain()', '', { checkpointInterval: 1000 });
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;
@@ -278,7 +278,7 @@ var checkVersionInChain = function (callback) {
 
 var whichStateIsDeeper = function (callback) {
 // create a chainpad
-    var rt = registerNode('whichStateIsDeeper()', '');
+    var rt = registerNode('whichStateIsDeeper()', '', { checkpointInterval: 1000 });
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;

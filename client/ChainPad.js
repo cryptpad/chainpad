@@ -186,6 +186,12 @@ var forgetMessage = function (realtime, msg) {
     if (list.length === 0) {
         delete realtime.messagesByParent[msg.lastMsgHash];
     }
+    var children = realtime.messagesByParent[msg.hashOf];
+    if (children) {
+        for (var i = 0; i < children.length; i++) {
+            delete children[i].parent;
+        }
+    }
 };
 
 var create = ChainPad.create = function (config) {
