@@ -51,6 +51,12 @@ var debug = function (realtime, msg) {
     }
 };
 
+var warn = function (realtime, msg) {
+    if (realtime.logLevel > 0) {
+        console.error("[" + realtime.userName + "]  " + msg);
+    }
+};
+
 var schedule = function (realtime, func, timeout) {
     if (realtime.aborted) { return; }
     if (!timeout) {
@@ -416,7 +422,7 @@ var pushUIPatch = function (realtime, patch) {
 var validContent = function (realtime, contentGetter) {
     if (!realtime.config.validateContent) { return true; }
     try {
-        return realtime.validateContent(contentGetter());
+        return realtime.config.validateContent(contentGetter());
     } catch (e) {
         warn(realtime, "Error in content validator [" + e.stack + "]");
     }
