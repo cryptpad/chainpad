@@ -240,6 +240,71 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
 
     var toTransform = clone(origToTransform);
     var text = doc;
+
+    var checkpoint = 0;
+
+    [toTransform, transformBy].forEach(function (patch, index) {
+        if (patch.isCheckpoint) {
+            checkpoint |= (index + 1);
+            return patch.isCheckpoint;
+        }
+    });
+
+    switch (checkpoint) {
+        case 0:
+            // neither is a checkpoint
+            break;
+        case 1:
+            // toTransform is a checkpoint
+            console.error("toTransform is a checkpoint!!!!!!!");
+            console.log(toTransform);
+            // make sure the checkpoint equals the content you have
+            Common.assert(text === toTransform.operations[0].toInsert);
+            // make sure the checkpoint's removal equals the length of your whole document
+            Common.assert(toTransform.operations[0].toRemove === text.length);
+
+            var docAfterTransformBy = Patch.apply(transformBy, realtime.authDoc);
+            toTransform.operations[0].toRemove = docAfterTransformBy.length;
+            toTransform.operations[0].toInsert = docAfterTransformBy;
+
+            /*
+                apply transformBy to the authDoc (calculate the result of applying, and return it)
+                then, create a new checkpoint (which removes everything, and adds everything)
+                return that.
+            */
+
+            // we need to update the hash
+            toTransform.parentHash = Sha.hex_sha256(docAfterTransformBy);
+
+            return toTransform;
+            break;
+        case 2:
+            // transformBy is a checkpoint
+            console.error("transformBy is a checkpoint!!!!!!!");
+            console.log(transformBy);
+
+            // make sure the checkpoint equals the content you have
+            Common.assert(text === transformBy.operations[0].toInsert);
+            // make sure the checkpoint's removal equals the length of your whole document
+            Common.assert(transformBy.operations[0].toRemove === text.length);
+
+
+            /* do nothing, return toTransform */
+            return toTransform;
+            break;
+        case 3:
+            // both are checkpoints
+            console.error("toTransform and transformBy are both checkpoints!!!!!!!");
+            if (transformBy.operations[0].toInsert !== toTransform.operations[0].toInsert) {
+                // what does it mean if there are two checkpoints which are not equal?
+            } else {
+                // they are equal, ok???
+            }
+            break;
+        default:
+            console.log("Unhandled OT case");
+    }
+
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
             try {
