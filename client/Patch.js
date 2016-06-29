@@ -137,6 +137,15 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
         check(oldPatch);
         check(newPatch);
     }
+    if (oldPatch.isCheckpoint) {
+        Common.assert(newPatch.parentHash === oldPatch.parentHash);
+        if (newPatch.isCheckpoint) {
+            return create(oldPatch.parentHash)
+        }
+        return clone(newPatch);
+    } else if (newPatch.isCheckpoint) {
+        return clone(oldPatch);
+    }
     oldPatch = clone(oldPatch);
     for (var i = newPatch.operations.length-1; i >= 0; i--) {
         addOperation(oldPatch, newPatch.operations[i]);
@@ -188,6 +197,7 @@ var invert = Patch.invert = function (patch, doc)
         }
     }
     rpatch.parentHash = Sha.hex_sha256(newDoc);
+    rpatch.isCheckpoint = patch.isCheckpoint;
     if (Common.PARANOIA) { check(rpatch); }
     return rpatch;
 };
@@ -229,6 +239,10 @@ var equals = Patch.equals = function (patchA, patchB) {
     return true;
 };
 
+var isCheckpointOp = function (op, text) {
+    return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
+};
+
 var transform = Patch.transform = function (origToTransform, transformBy, doc, transformFunction) {
     if (Common.PARANOIA) {
         check(origToTransform, doc.length);
@@ -241,7 +255,9 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     var toTransform = clone(origToTransform);
     var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        if (isCheckpointOp(toTransform.operations[i], text)) { continue; }
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
+            if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
             try {
                 toTransform.operations[i] = Operation.transform(text,
                                                                 toTransform.operations[i],

@@ -330,11 +330,85 @@ var whichStateIsDeeper = function (callback) {
         }
 
         i++;
-        var op = Operation.random(doc.length);
+        var op;
+        do {
+            op = Operation.random(doc.length);
+             // we can't have the same state multiple times for this test.
+        } while (op.toInsert.length <= op.toRemove);
         doc = Operation.apply(op,doc);
         runOperation(rt, op);
         rt.sync();
     },1);
+};
+
+var checkpointOT = function (callback) {
+    var rtA = registerNode('checkpointOT(rtA)', '', { checkpointInterval: 10 });
+    var rtB = registerNode('checkpointOT(rtB)', '', { checkpointInterval: 10 });
+    rtA.queue = [];
+    rtB.queue = [];
+    var messages = 0;
+    var syncing = 0;
+
+    var onMsg = function (rt, msg, cb) {
+        if (syncing) {
+            setTimeout(function () { onMsg(rt, msg, cb); });
+            return;
+        }
+        messages++;
+        var destRt = (rt === rtA) ? rtB : rtA;
+        syncing++;
+        setTimeout(function () {
+            messages--;
+            destRt.queue.push(msg);
+            setTimeout(function () {
+                destRt.message(destRt.queue.shift());
+                syncing--;
+                cb();
+            });
+        });
+    };
+    [rtA, rtB].forEach(function (rt) {
+        rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb) });
+        rt.start();
+    });
+
+    var i = 0;
+    var to = setInterval(function () {
+        if (syncing) { return; }
+        i++;
+        if (i < 20) {
+            var op = Operation.random(rtA.doc.length);
+            rtA.doc = Operation.apply(op, rtA.doc);
+            runOperation(rtA, op);
+        } else if (i === 25) {
+            //console.log(rtA.getUserDoc() + ' ==x= ' + rtB.getUserDoc());
+            Common.assert(rtA.getUserDoc() === rtB.getAuthDoc());
+            Common.assert(rtA.getUserDoc() === rtB.getUserDoc());
+            Common.assert(rtA.getAuthDoc() === rtB.getAuthDoc());
+            var opA = Operation.create(0, 0, 'A');
+            var opB = Operation.create(1, 0, 'B');
+            runOperation(rtA, opA);
+            runOperation(rtB, opB);
+        } else if (i > 35) {
+            console.log("rtA authDoc " + rtA.getAuthDoc());
+            console.log("rtB authDoc " + rtB.getAuthDoc());
+            Common.assert(rtA.getUserDoc() === rtB.getUserDoc());
+            Common.assert(rtA.getAuthDoc() === rtB.getAuthDoc());
+            Common.assert(rtA.getAuthDoc()[0] === 'A');
+            Common.assert(rtA.getAuthDoc()[2] === 'B');
+
+            clearTimeout(to);
+            rtA.abort();
+            rtB.abort();
+            callback();
+            return;
+        }
+
+        rtA.sync();
+        rtB.sync();
+        //console.log(rtA.getUserDoc() + ' === ' + rtB.getUserDoc());
+    });
+
 };
 
 var main = module.exports.main = function (cycles, callback) {
@@ -350,5 +424,7 @@ var main = module.exports.main = function (cycles, callback) {
         checkVersionInChain(waitFor());
     }).nThen(function (waitFor) {
         whichStateIsDeeper(waitFor());
+    }).nThen(function (waitFor) {
+        checkpointOT(waitFor());
     }).nThen(callback);
 };
