@@ -441,6 +441,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
     msg.hashOf = Message.hashOf(msg);
 
+    if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
+
     if (realtime.messages[msg.hashOf]) {
         debug(realtime, "Patch [" + msg.hashOf + "] is already known");
         if (Common.PARANOIA) { check(realtime); }

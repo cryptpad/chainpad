@@ -15,13 +15,19 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var PARANOIA = module.exports.PARANOIA = true;
+var DEBUG = module.exports.debug =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
+
+var PARANOIA = module.exports.PARANOIA =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_PARANOIA']);
 
 /* Good testing but slooooooooooow */
-var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG = false;
+var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG']);
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-var TESTING = module.exports.TESTING = false;
+var TESTING = module.exports.TESTING =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
 
 var assert = module.exports.assert = function (expr) {
     if (!expr) { throw new Error("Failed assertion"); }

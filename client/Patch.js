@@ -258,6 +258,11 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
         if (isCheckpointOp(toTransform.operations[i], text)) { continue; }
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
             if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
+            if (Common.DEBUG) {
+                console.log(
+                    ['TRANSFORM', text, toTransform.operations[i], transformBy.operations[j]]
+                );
+            }
             try {
                 toTransform.operations[i] = Operation.transform(text,
                                                                 toTransform.operations[i],
