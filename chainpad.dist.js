@@ -141,6 +141,15 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
         check(oldPatch);
         check(newPatch);
     }
+    if (oldPatch.isCheckpoint) {
+        Common.assert(newPatch.parentHash === oldPatch.parentHash);
+        if (newPatch.isCheckpoint) {
+            return create(oldPatch.parentHash)
+        }
+        return clone(newPatch);
+    } else if (newPatch.isCheckpoint) {
+        return clone(oldPatch);
+    }
     oldPatch = clone(oldPatch);
     for (var i = newPatch.operations.length-1; i >= 0; i--) {
         addOperation(oldPatch, newPatch.operations[i]);
@@ -192,6 +201,7 @@ var invert = Patch.invert = function (patch, doc)
         }
     }
     rpatch.parentHash = Sha.hex_sha256(newDoc);
+    rpatch.isCheckpoint = patch.isCheckpoint;
     if (Common.PARANOIA) { check(rpatch); }
     return rpatch;
 };
@@ -233,6 +243,10 @@ var equals = Patch.equals = function (patchA, patchB) {
     return true;
 };
 
+var isCheckpointOp = function (op, text) {
+    return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
+};
+
 var transform = Patch.transform = function (origToTransform, transformBy, doc, transformFunction) {
     if (Common.PARANOIA) {
         check(origToTransform, doc.length);
@@ -245,7 +259,14 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     var toTransform = clone(origToTransform);
     var text = doc;
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
+        if (isCheckpointOp(toTransform.operations[i], text)) { continue; }
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
+            if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
+            if (Common.DEBUG) {
+                console.log(
+                    ['TRANSFORM', text, toTransform.operations[i], transformBy.operations[j]]
+                );
+            }
             try {
                 toTransform.operations[i] = Operation.transform(text,
                                                                 toTransform.operations[i],
@@ -396,13 +417,19 @@ var random = Patch.random = function (doc, opCount) {
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var PARANOIA = module.exports.PARANOIA = true;
+var DEBUG = module.exports.debug =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
+
+var PARANOIA = module.exports.PARANOIA =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_PARANOIA']);
 
 /* Good testing but slooooooooooow */
-var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG = false;
+var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG']);
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-var TESTING = module.exports.TESTING = false;
+var TESTING = module.exports.TESTING =
+    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
 
 var assert = module.exports.assert = function (expr) {
     if (!expr) { throw new Error("Failed assertion"); }
@@ -957,6 +984,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     }
 
     msg.hashOf = Message.hashOf(msg);
+
+    if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
 
     if (realtime.messages[msg.hashOf]) {
         debug(realtime, "Patch [" + msg.hashOf + "] is already known");
