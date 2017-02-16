@@ -60,7 +60,7 @@ then this function can validate them if they are broken then the patch will be r
 at an interval which is not in agreement with **checkpointInterval**. Default: *false*.
 * **transformFunction** (function) if specified, this function will be substituted for the default
 operational transformation function whenever two operations are applied simultaneously. Returning
-`null` from the function will reject the resulting patch. For an example function, see 
+`null` from the function will reject the resulting patch. For an example function, see
 [chainpad-json-validator](https://github.com/xwiki-labs/chainpad-json-validator)
 
 
@@ -127,8 +127,8 @@ chainpad.patch(patch);
 
 ### chainpad.start()
 
-Start the engine, this will cause the engine to send a register message via the data transport
-binding.
+Start the engine, this will cause the engine to setup a setInterval to sync back the changes
+reported. Before start() is called, you can still inform chainpad of changes from the network.
 
 ### chainpad.abort()
 
@@ -180,6 +180,13 @@ if (chainpad.getDepthOfState('pewpew', firstEncounter) !== -1) {
     console.log("the state 'pewpew' exists in the chain in at least two states");
 }
 ```
+
+### chainpad.onSettle()
+
+Register a handler to be called *once* when there is no *Uncommitted Work* left. This does not
+prove that no patch will be reverted because of a chain fork, but it does verify that the message
+has hit the server and been acknowledged. The handler will be called only once the next time the
+state is settled but you can re-register inside of the handler.
 
 # Internals
 
