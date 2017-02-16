@@ -988,7 +988,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
 
     if (realtime.messages[msg.hashOf]) {
-        debug(realtime, "Patch [" + msg.hashOf + "] is already known");
+        if (realtime.setContentPatch && realtime.setContentPatch.hashOf === msg.hashOf) {
+            // We got the initial state patch, channel already has a pad, no need to send it.
+            realtime.setContentPatch = null;
+        } else {
+            debug(realtime, "Patch [" + msg.hashOf + "] is already known");
+        }
         if (Common.PARANOIA) { check(realtime); }
         return;
     }
