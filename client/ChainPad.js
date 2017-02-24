@@ -754,5 +754,8 @@ module.exports.create = function (conf) {
             realtime.onSettle.push(handler);
         },
     };
+    if (Common.DEBUG) {
+        out._ = realtime;
+    }
     return out;
 };
