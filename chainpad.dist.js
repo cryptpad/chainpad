@@ -417,7 +417,7 @@ var random = Patch.random = function (doc, opCount) {
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-var DEBUG = module.exports.debug =
+var DEBUG = module.exports.DEBUG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
 var PARANOIA = module.exports.PARANOIA =
@@ -1298,6 +1298,9 @@ module.exports.create = function (conf) {
             realtime.onSettle.push(handler);
         },
     };
+    if (Common.DEBUG) {
+        out._ = realtime;
+    }
     return out;
 };
 
