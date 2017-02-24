@@ -796,6 +796,8 @@ var create = ChainPad.create = function (config) {
 
         rootMessage: null,
 
+        onSettle: [],
+
         userName: config.userName || 'anonymous',
     };
 
@@ -1198,6 +1200,12 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
     pushUIPatch(realtime, uncommittedPatch);
 
+    if (!uncommittedPatch.operations.length) {
+        var onSettle = realtime.onSettle;
+        realtime.onSettle = [];
+        onSettle.forEach(function (handler) { handler(); });
+    }
+
     if (Common.PARANOIA) { check(realtime); }
 };
 
@@ -1284,7 +1292,11 @@ module.exports.create = function (conf) {
 
         getDepthOfState: function (content, minDepth) {
             return getDepthOfState(content, minDepth, realtime);
-        }
+        },
+
+        onSettle: function (handler) {
+            realtime.onSettle.push(handler);
+        },
     };
     return out;
 };
