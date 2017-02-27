@@ -1203,7 +1203,13 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (!uncommittedPatch.operations.length) {
         var onSettle = realtime.onSettle;
         realtime.onSettle = [];
-        onSettle.forEach(function (handler) { handler(); });
+        onSettle.forEach(function (handler) {
+            try {
+                handler();
+            } catch (e) {
+                warn(realtime, "Error in onSettle handler [" + e.stack + "]");
+            }
+        });
     }
 
     if (Common.PARANOIA) { check(realtime); }
@@ -1238,6 +1244,45 @@ var getDepthOfState = function (content, minDepth, realtime) {
         depth++;
     } while ((patchMsg = getParent(realtime, patchMsg)));
     return -1;
+};
+
+var getContentAtState = function (realtime, msg) {
+    var patches = [ msg ];
+    while (patches[0] !== realtime.rootMessage) {
+        var parent = getParent(realtime, patches[0]);
+        if (!parent) {
+            return { error: 'not connected to root' };
+        }
+        patches.unshift(parent);
+    }
+    var doc = '';
+    if (realtime.rootMessage.content.operations.length) {
+        Common.assert(realtime.rootMessage.content.operations.length === 1);
+        var doc = realtime.rootMessage.content.operations[0].toInsert;
+    }
+    for (var i = 1; i < patches.length; i++) {
+        doc = Patch.apply(patches[i].content, doc);
+    }
+    return { doc: doc };
+};
+
+var wrapMessage = function (realtime, msg) {
+    var wrapped = Object.freeze({
+        type: 'Block',
+        hashOf: msg.hashOf,
+        lastMsgHash: msg.lastMsgHash,
+        isCheckpoint: !!msg.content.isCheckpoint,
+        getParent: function () { return getParent(realtime, msg); },
+        getContent: function () { return getContentAtState(realtime, msg); },
+        getPatch: function () { return Patch.clone(msg.content); },
+        getInversePatch: function () { return Patch.clone(msg.content.inverseOf); },
+        equals: function (block, msgOpt) {
+            if (msgOpt) { return msg === msgOpt; }
+            Common.assert(block.type === 'Block');
+            return block.equals(null, msg);
+        }
+    });
+    return wrapped;
 };
 
 module.exports.create = function (conf) {
@@ -1295,8 +1340,23 @@ module.exports.create = function (conf) {
         },
 
         onSettle: function (handler) {
-            realtime.onSettle.push(handler);
+            Common.assert(typeof(handler) === 'function');
+            if (realtime.uncommitted.operations.length) {
+                setTimeout(handler);
+            } else {
+                realtime.onSettle.push(handler);
+            }
         },
+
+        getAuthBlock: function () {
+            return wrapMessage(realtime, realtime.best);
+        },
+
+        getBlockForHash: function (hash) {
+            Common.assert(typeof(hash) === 'string');
+            var msg = realtime.messages[hash];
+            if (msg) { return wrapMessage(realtime, msg); }
+        }
     };
     if (Common.DEBUG) {
         out._ = realtime;
