@@ -46,7 +46,7 @@ parameters.
 
 * **initialState** (string) content to start off the pad with, default is empty-string.
 * **checkpointInterval** (number) the number of patches which should be allowed to go across the
-wire before sending a checkpoint. A small number will result in lots of sending of checkpoints
+wire before sending a *checkpoint*. A small number will result in lots of sending of *checkpoints*
 which are necessarily large because they send the whole document in the message. A large number
 will result in more patches to download for a new person joining the pad.
 * **avgSyncMilliseconds** (number) the number of milliseconds to wait before sending to the server
@@ -123,6 +123,30 @@ using Operation.create and Patch.addOperation(). See **ChainPad Internals** for 
 chainpad.patch(patch);
 ```
 
+## Block Object
+
+A block object is an internal representation of a message sent on the wire, each block contains a
+**Patch** which itself contains one or more **Operations**. You can access **Blocks** using
+`chainpad.getAuthBlock()` or `chainpad.getBlockForHash()`.
+
+### Fields/Functions
+
+* **hashOf**: Calculated SHA256 of the on-wire representation of this **Block** (as a **Message**).
+* **lastMsgHash**: SHA256 of previous/parent **Block** in the chain. If this is all zeros then this
+**Block** is the initial block.
+* **isCheckpoint**: True if this **Block** represents a *checkpoint*. A *checkpoint* always removes
+all of the content from the document and then adds it back, leaving the document as it was.
+* **getParent**`() -> Block`: Get the parent block of this block, this is fast because the blocks
+are already in the chain in memory.
+* **getContent**`() -> string`: Get the content of the *Authoritative Document* at the point in the
+history represented by this block. This takes time because it requires replaying part of the chain.
+* **getPatch**`() -> Patch`: Get a clone of the **Patch** which is contained in this block.
+* **getInversePatch**`() -> Patch`: Get a clone of the inverse **Patch** (the **Patch** which would
+undo the **Patch** provided by **getPatch**). This is calculated when the **Message** comes in to
+ChainPad.
+* **equals**`(Block) -> Boolean`: Find out if another **Block** is representing the same underlying
+structure, since **Blocks** are created whenever one is requested, using triple-equals is not ok.
+
 ## Control Functions
 
 ### chainpad.start()
@@ -143,6 +167,15 @@ committed, just that it has attempted to send it to the server.
 
 Access the *Authoritative Document*, this is the content which everybody has agreed upon and has
 been entered into the chain.
+
+### chainpad.getAuthBlock()
+
+Access the blockchain block which is at the head of the chain, this block contains the last patch
+which made the *Authoritative Document* what it is. This returns a *Block Object*.
+
+### chainpad.getBlockForHash()
+
+Access the stored block which based on the SHA-256 hash.
 
 ### chainpad.getUserDoc()
 
@@ -199,6 +232,7 @@ first.
 document content at the previous state (before the patch is applied).
 * **Message**: Either a request to register the user, an announcement of a user having joined the
 document or an encapsulation of a **Patch** to be sent over the wire.
+* **Block**: This is an API encapsulation of the **Message** when it is in the chain.
 
 ## Functions
 

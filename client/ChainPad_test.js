@@ -411,6 +411,44 @@ var checkpointOT = function (callback) {
 
 };
 
+var getAuthBlock = function (callback) {
+    var doc = '';
+// create a chainpad
+    var rt = registerNode('getAuthBlock()', '', { checkpointInterval: 1000 });
+    var messages = 0;
+    rt.onMessage(function (msg, cb) {
+        messages++;
+        cb(); // must be sync because of the setInterval below
+    });
+    rt.start();
+
+    var i = 0;
+    var oldUserDoc;
+    var to = setInterval(function () {
+        // on the 51st change, grab the block
+        if (i === 50) {
+            oldAuthBlock = rt.getAuthBlock();
+            oldAuthDoc = rt.getAuthDoc();
+            Common.assert(oldAuthBlock.getContent().doc === oldAuthDoc);
+        }
+        // on the 100th random change, check if getting the state at oldAuthBlock works...
+        if (i++ > 100) {
+            clearTimeout(to);
+            Common.assert(oldAuthBlock.getContent().doc === oldAuthDoc);
+            Common.assert(oldAuthBlock.equals(rt.getBlockForHash(oldAuthBlock.hashOf)));
+            rt.abort();
+            callback();
+            return;
+        }
+
+        // fire off another operation
+        var op = Operation.random(doc.length);
+        doc = Operation.apply(op, doc);
+        runOperation(rt, op);
+        rt.sync();
+    },1);
+};
+
 var main = module.exports.main = function (cycles, callback) {
     nThen(function (waitFor) {
         startup(waitFor());
@@ -426,5 +464,7 @@ var main = module.exports.main = function (cycles, callback) {
         whichStateIsDeeper(waitFor());
     }).nThen(function (waitFor) {
         checkpointOT(waitFor());
+    }).nThen(function (waitFor) {
+        getAuthBlock(waitFor());
     }).nThen(callback);
 };
