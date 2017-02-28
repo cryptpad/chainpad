@@ -728,7 +728,10 @@ var wrapMessage = function (realtime, msg) {
         hashOf: msg.hashOf,
         lastMsgHash: msg.lastMsgHash,
         isCheckpoint: !!msg.content.isCheckpoint,
-        getParent: function () { return getParent(realtime, msg); },
+        getParent: function () {
+            var parentMsg = getParent(realtime, msg);
+            if (parentMsg) { return wrapMessage(realtime, parentMsg); }
+        },
         getContent: function () { return getContentAtState(realtime, msg); },
         getPatch: function () { return Patch.clone(msg.content); },
         getInversePatch: function () { return Patch.clone(msg.content.inverseOf); },
