@@ -125,6 +125,18 @@ var sendMessage = function (realtime, msg, callback) {
     if (Common.PARANOIA) { check(realtime); }
 };
 
+var settle = function (realtime) {
+    var onSettle = realtime.onSettle;
+    realtime.onSettle = [];
+    onSettle.forEach(function (handler) {
+        try {
+            handler();
+        } catch (e) {
+            warn(realtime, "Error in onSettle handler [" + e.stack + "]");
+        }
+    });
+};
+
 var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
     if (realtime.syncSchedule && !realtime.pending) {
@@ -141,6 +153,7 @@ var sync = function (realtime) {
 
     if (realtime.uncommitted.operations.length === 0) {
         //debug(realtime, "No data to sync to the server, sleeping");
+        settle(realtime);
         realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         return;
     }
@@ -656,16 +669,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
     pushUIPatch(realtime, uncommittedPatch);
 
-    if (!uncommittedPatch.operations.length) {
-        var onSettle = realtime.onSettle;
-        realtime.onSettle = [];
-        onSettle.forEach(function (handler) {
-            try {
-                handler();
-            } catch (e) {
-                warn(realtime, "Error in onSettle handler [" + e.stack + "]");
-            }
-        });
+    if (!realtime.uncommitted.operations.length) {
+        settle(realtime);
     }
 
     if (Common.PARANOIA) { check(realtime); }
@@ -800,11 +805,7 @@ module.exports.create = function (conf) {
 
         onSettle: function (handler) {
             Common.assert(typeof(handler) === 'function');
-            if (realtime.uncommitted.operations.length) {
-                setTimeout(handler);
-            } else {
-                realtime.onSettle.push(handler);
-            }
+            realtime.onSettle.push(handler);
         },
 
         getAuthBlock: function () {
