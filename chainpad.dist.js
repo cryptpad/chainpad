@@ -970,7 +970,7 @@ var pushUIPatch = function (realtime, patch) {
             realtime.patchHandlers[i](patch);
         }
         for (var i = 0; i < realtime.changeHandlers.length; i++) {
-            for (var j = patch.operations.length; j >= 0; j--) {
+            for (var j = patch.operations.length - 1; j >= 0; j--) {
                 var op = patch.operations[j];
                 realtime.changeHandlers[i](op.offset, op.toRemove, op.toInsert);
             }
