@@ -1,4 +1,11 @@
 language: node_js
 node_js:
   - "0.12"
-script: npm run-script lint
+  - "4"
+  - "5"
+  - "6"
+  - "7"
+script:
+  - npm run-script lint
+  - npm run-script flow
+  - ./do

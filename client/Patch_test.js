@@ -1,3 +1,4 @@
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,10 +15,11 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
-var Sha = require('./SHA256');
+var Sha = require('./sha256');
 var nThen = require('nthen');
 
 // These are fuzz tests so increasing this number might catch more errors.
@@ -36,7 +38,7 @@ var addOperationConst = function (origDoc, expectedDoc, operations) {
     }
     Common.assert(doc === expectedDoc);
 
-    var doc = Patch.apply(patch, origDoc);
+    doc = Patch.apply(patch, origDoc);
 
     Common.assert(doc === expectedDoc);
 
@@ -111,68 +113,34 @@ var merge = function (cycles, callback) {
 };
 
 var transformStatic = function () {
-    Patch.transform(
-      {
-        "type": "Patch",
-        "operations": [
-          {
-            "type": "Operation",
-            "offset": 4,
-            "toRemove": 63,
-            "toInsert": "VAPN]Z[bwdn\\OvP"
-          },
-          {
-            "type": "Operation",
-            "offset": 88,
-            "toRemove": 2,
-            "toInsert": ""
-          }
-        ],
-        "parentHash": "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235"
-      },
-      {
-        "type": "Patch",
-        "operations": [
-          {
-            "type": "Operation",
-            "offset": 0,
-            "toRemove": 92,
-            "toInsert": "[[fWjLRmIVZV[BiG^IHqDGmCuooPE"
-          }
-        ],
-        "parentHash": "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235"
-      },
-      "_VMsPV\\PNXjQiEoTdoUHYxZALnDjB]onfiN[dBP[vqeGJJZ\\vNaQ`\\Y_jHNnrHOoFN^UWrWjCKoKe" +
-          "D[`nosFrM`EpY\\Ib"
-    );
+    var p0 = [
+        "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235",
+        [ [4, 63, "VAPN]Z[bwdn\\OvP"], [ 88, 2, "" ] ]
+    ];
+    var p1 = [
+        "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235",
+        [ [ 0, 92, "[[fWjLRmIVZV[BiG^IHqDGmCuooPE" ] ]
+    ];
+    var convert = function (p) {
+        var out = Patch.create(p[0]);
+        p[1].forEach(function (o) { out.operations.push(Operation.create.apply(null, o)); });
+        return out;
+    };
 
     Patch.transform(
-      {
-        "type": "Patch",
-        "operations": [
-          {
-            "type": "Operation",
-            "offset": 10,
-            "toRemove": 5,
-            "toInsert": ""
-          }
-        ],
-        "parentHash": "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4"
-      },
-      {
-        "type": "Patch",
-        "operations": [
-          {
-            "type": "Operation",
-            "offset": 10,
-            "toRemove": 5,
-            "toInsert": ""
-          }
-        ],
-        "parentHash": "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4"
-      },
-      "SofyheYQWsva[NLAGkB"
+      convert(p0),
+      convert(p1),
+      "_VMsPV\\PNXjQiEoTdoUHYxZALnDjB]onfiN[dBP[vqeGJJZ\\vNaQ`\\Y_jHNnrHOoFN^UWrWjCKoKe" +
+          "D[`nosFrM`EpY\\Ib",
+      Operation.transform0
     );
+
+    var p2 = [
+        "74065c145b0455b4a48249fdf9a04cf0e3fbcb6d175435851723c976fc6db2b4",
+        [ [ 10, 5, "" ] ]
+    ];
+
+    Patch.transform(convert(p2), convert(p2), "SofyheYQWsva[NLAGkB", Operation.transform0);
 };
 
 var transform = function (cycles, callback) {
@@ -181,7 +149,7 @@ var transform = function (cycles, callback) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 100)+1);
         var patchAB = Patch.random(docA);
         var patchAC = Patch.random(docA);
-        var patchBC = Patch.transform(patchAC, patchAB, docA);
+        var patchBC = Patch.transform(patchAC, patchAB, docA, Operation.transform0);
         var docB = Patch.apply(patchAB, docA);
         Patch.apply(patchBC, docB);
     }
@@ -193,7 +161,7 @@ var simplify = function (cycles, callback) {
         // use a very short document to cause lots of common patches.
         var docA = Common.randomASCII(Math.floor(Math.random() * 50)+1);
         var patchAB = Patch.random(docA);
-        var spatchAB = Patch.simplify(patchAB, docA);
+        var spatchAB = Patch.simplify(patchAB, docA, Operation.simplify);
         var docB = Patch.apply(patchAB, docA);
         var sdocB = Patch.apply(spatchAB, docA);
         Common.assert(sdocB === docB);
@@ -201,7 +169,7 @@ var simplify = function (cycles, callback) {
     callback();
 };
 
-var main = module.exports.main = function (cycles, callback) {
+var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         simplify(cycles, waitFor());
     }).nThen(function (waitFor) {

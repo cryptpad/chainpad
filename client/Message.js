@@ -1,3 +1,4 @@
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,68 +15,88 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
-var Sha = require('./SHA256');
+var Sha = require('./sha256');
 
 var Message = module.exports;
 
-var REGISTER     = Message.REGISTER     = 0;
-var REGISTER_ACK = Message.REGISTER_ACK = 1;
 var PATCH        = Message.PATCH        = 2;
-var DISCONNECT   = Message.DISCONNECT   = 3;
 var CHECKPOINT   = Message.CHECKPOINT   = 4;
 
-var check = Message.check = function(msg) {
-    Common.assert(msg.type === 'Message');
-    if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
-        Patch.check(msg.content);
-        Common.assert(typeof(msg.lastMsgHash) === 'string');
-    } else {
-        throw new Error("invalid message type [" + msg.messageType + "]");
+/*::
+import type { Sha256_t } from './sha256'
+import type { Patch_t } from './Patch'
+export type Message_Type_t = 2 | 4;
+export type Message_t = {
+    type: 'Message',
+    messageType: Message_Type_t,
+    content: Patch_t,
+    lastMsgHash: Sha256_t,
+    hashOf: Sha256_t,
+    mut: {
+        parentCount: ?number,
+        isInitialMessage: boolean,
+        parent: ?Message_t,
+        isFromMe: boolean
     }
+}
+*/
+
+var check = Message.check = function(msg /*:any*/) /*:Message_t*/ {
+    Common.assert(msg.type === 'Message');
+    Common.assert(msg.messageType === PATCH || msg.messageType === CHECKPOINT);
+    Patch.check(msg.content);
+    Common.assert(typeof(msg.lastMsgHash) === 'string');
+    return msg;
 };
 
-var create = Message.create = function (type, content, lastMsgHash) {
+var DUMMY_HASH /*:Sha256_t*/ = "";
+
+var create = Message.create = function (
+    type /*:Message_Type_t*/,
+    content /*:Patch_t*/,
+    lastMsgHash /*:Sha256_t*/) /*:Message_t*/
+{
     var msg = {
         type: 'Message',
         messageType: type,
         content: content,
-        lastMsgHash: lastMsgHash
+        lastMsgHash: lastMsgHash,
+        hashOf: DUMMY_HASH,
+        mut: {
+            parentCount: undefined,
+            isInitialMessage: false,
+            isFromMe: false,
+            parent: undefined
+        }
     };
+    msg.hashOf = hashOf(msg);
     if (Common.PARANOIA) { check(msg); }
-    return msg;
+    return Object.freeze(msg);
 };
 
-var toString = Message.toString = function (msg) {
+// $FlowFixMe doesn't like the toString()
+var toString = Message.toString = function (msg /*:Message_t*/) {
     if (Common.PARANOIA) { check(msg); }
     if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
+        if (!msg.content) { throw new Error(); }
         return JSON.stringify([msg.messageType, Patch.toObj(msg.content), msg.lastMsgHash]);
     } else {
         throw new Error();
     }
 };
 
-var discardBencode = function (msg, arr) {
-    var len = msg.substring(0,msg.indexOf(':'));
-    msg = msg.substring(len.length+1);
-    var value = msg.substring(0,Number(len));
-    msg = msg.substring(value.length);
-
-    if (arr) { arr.push(value); }
-    return msg;
-};
-
-var fromString = Message.fromString = function (str) {
+var fromString = Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var m = JSON.parse(str);
     if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
-    var msg = create(m[0], Patch.fromObj(m[1]), m[2]);
-    if (m[0] === CHECKPOINT) { msg.content.isCheckpoint = true; }
-    return msg;
+    var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
+    return Object.freeze(msg);
 };
 
-var hashOf = Message.hashOf = function (msg) {
+var hashOf = Message.hashOf = function (msg /*:Message_t*/) {
     if (Common.PARANOIA) { check(msg); }
     var hash = Sha.hex_sha256(toString(msg));
     return hash;

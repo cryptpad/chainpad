@@ -1,3 +1,5 @@
+/*@flow*/
+/* globals localStorage */
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,7 +16,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+"use strict";
 var DEBUG = module.exports.DEBUG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
@@ -29,17 +31,17 @@ var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_M
 var TESTING = module.exports.TESTING =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
 
-var assert = module.exports.assert = function (expr) {
+var assert = module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
 
-var isUint = module.exports.isUint = function (integer) {
+var isUint = module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
         (Math.floor(integer) === integer) &&
         (integer >= 0);
 };
 
-var randomASCII = module.exports.randomASCII = function (length) {
+var randomASCII = module.exports.randomASCII = function (length /*:number*/) {
     var content = [];
     for (var i = 0; i < length; i++) {
         content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 57 + 65 );
@@ -47,8 +49,8 @@ var randomASCII = module.exports.randomASCII = function (length) {
     return content.join('');
 };
 
-var strcmp = module.exports.strcmp = function (a, b) {
+var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     if (PARANOIA && typeof(a) !== 'string') { throw new Error(); }
     if (PARANOIA && typeof(b) !== 'string') { throw new Error(); }
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );
-}
+};

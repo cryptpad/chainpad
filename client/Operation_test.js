@@ -1,3 +1,4 @@
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,6 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 var Operation = require('./Operation');
 var nThen = require('nthen');
@@ -28,17 +30,19 @@ var applyReversibility = function () {
         rOperations[i] = Operation.invert(operations[i], docx);
         docx = Operation.apply(operations[i], docx);
     }
-    for (var i = 1000-1; i >= 0; i--) {
-        if (rOperations[i]) {
-            var inverse = Operation.invert(rOperations[i], docx);
-            docx = Operation.apply(rOperations[i], docx);
+    (function () {
+        for (var i = 1000-1; i >= 0; i--) {
+            if (rOperations[i]) {
+                var inverse = Operation.invert(rOperations[i], docx);
+                docx = Operation.apply(rOperations[i], docx);
+            }
+            /*if (JSON.stringify(operations[i]) !== JSON.stringify(inverse)) {
+                throw new Error("the inverse of the inverse is not the forward:\n" +
+                    JSON.stringify(operations[i], null, '  ') + "\n" +
+                    JSON.stringify(inverse, null, '  '));
+            }*/
         }
-        /*if (JSON.stringify(operations[i]) !== JSON.stringify(inverse)) {
-            throw new Error("the inverse of the inverse is not the forward:\n" +
-                JSON.stringify(operations[i], null, '  ') + "\n" +
-                JSON.stringify(inverse, null, '  '));
-        }*/
-    }
+    }());
     Common.assert(doc === docx);
 };
 
@@ -109,7 +113,7 @@ var simplify = function (cycles, callback) {
     callback();
 };
 
-var main = module.exports.main = function (cycles, callback) {
+var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         simplify(cycles, waitFor());
     }).nThen(function (waitFor) {

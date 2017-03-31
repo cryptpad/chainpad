@@ -1,3 +1,4 @@
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,13 +15,23 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var ChainPad = require('./ChainPad');
 var Common = require('./Common');
 var Operation = require('./Operation');
-var Sha = require('./SHA256');
 var nThen = require('nthen');
+/*::
+import type { Message_t } from './Message';
+*/
 
 ChainPad.Common.TESTING = true;
+
+var xsetInterval = function (call, ms) {
+    var inter = setInterval(function () {
+        try { call(); } catch (e) { clearInterval(inter); throw e; }
+    }, ms);
+    return inter;
+};
 
 var startup = function (callback) {
     var rt = ChainPad.create({
@@ -44,7 +55,7 @@ var remove = function (doc, offset, count) {
 };
 
 var registerNode = function (name, initialDoc, conf) {
-    conf = conf || {};
+    conf = ((conf || {}) /*:Object*/);
     conf.userName = conf.userName || name;
     conf.initialState = initialDoc;
     var rt = ChainPad.create(conf);
@@ -56,14 +67,26 @@ var registerNode = function (name, initialDoc, conf) {
             handlers.forEach(function (handler) { handler(msg, cb); });
         });
     });
-    rt.onMessage = function (handler) {
-        handlers.push(handler);
-    }
 
-    rt.doc = initialDoc;
+    var out = {
+        onMessage: function (handler /*:(string,()=>void)=>void*/) { handlers.push(handler); },
+        change: rt.change,
+        start: rt.start,
+        sync: rt.sync,
+        abort: rt.abort,
+        message: rt.message,
+        getUserDoc: rt.getUserDoc,
+        getAuthDoc: rt.getAuthDoc,
+        getDepthOfState: rt.getDepthOfState,
+        getAuthBlock: rt.getAuthBlock,
+        getBlockForHash: rt.getBlockForHash,
 
-    rt.onPatch(function () { rt.doc = rt.getUserDoc() });
-    return rt;
+        queue: [],
+        cp: rt,
+        doc: initialDoc,
+    };
+    rt.onPatch(function () { out.doc = rt.getUserDoc(); });
+    return out;
 };
 
 var editing = function (callback) {
@@ -78,7 +101,7 @@ var editing = function (callback) {
     rt.start();
 
     var i = 0;
-    var to = setInterval(function () {
+    var to = xsetInterval(function () {
         if (i++ > 10) {
             clearTimeout(to);
             for (var j = 0; j < 100; j++) {
@@ -103,7 +126,7 @@ var editing = function (callback) {
 
 var fakeSetTimeout = function (func, time) {
     var i = time;
-    var tick = function () { if (i-- <= 0) { func() } else { setTimeout(tick); } };
+    var tick = function () { if (i-- <= 0) { func(); } else { setTimeout(tick); } };
     setTimeout(tick);
 };
 
@@ -127,13 +150,13 @@ var twoClientsCycle = function (callback, origDocA, origDocB) {
         }, Math.random() * 100);
     };
     [rtA, rtB].forEach(function (rt) {
-        rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb) });
+        rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb); });
         rt.start();
     });
     //[rtA, rtB].forEach(function (rt) { rt.start(); });
 
     var i = 0;
-    var to = setInterval(function () {
+    var to = xsetInterval(function () {
         if (i++ > 100) {
             clearTimeout(to);
             var j = 0;
@@ -246,13 +269,14 @@ var checkVersionInChain = function (callback) {
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;
-        cb(); // must be sync because of the setInterval below
+        cb(); // must be sync because of the xsetInterval below
     });
     rt.start();
 
     var i = 0;
     var oldUserDoc;
-    var to = setInterval(function () {
+    var oldAuthDoc;
+    var to = xsetInterval(function () {
 // on the 51st change, grab the doc
         if (i === 50) {
             oldAuthDoc = rt.getAuthDoc();
@@ -261,7 +285,7 @@ var checkVersionInChain = function (callback) {
         if (i++ > 100) {
             clearTimeout(to);
             Common.assert(rt.getDepthOfState(oldAuthDoc) !== -1);
-            Common.assert(rt.getDepthOfState(rt.getAuthDoc()) !== -1)
+            Common.assert(rt.getDepthOfState(rt.getAuthDoc()) !== -1);
             rt.abort();
             callback();
             return;
@@ -280,9 +304,11 @@ var whichStateIsDeeper = function (callback) {
 // create a chainpad
     var rt = registerNode('whichStateIsDeeper()', '', { checkpointInterval: 1000 });
     var messages = 0;
+    var next = function () { };
     rt.onMessage(function (msg, cb) {
         messages++;
         cb();
+        next();
     });
     rt.start();
 
@@ -293,7 +319,7 @@ var whichStateIsDeeper = function (callback) {
 
     var i = 0;
 
-    var to = setInterval(function () {
+    next = function () {
         if (i === 25) {
             // grab docO
             docO = rt.getAuthDoc();
@@ -318,7 +344,7 @@ var whichStateIsDeeper = function (callback) {
         } else if (i >= 100) {
             console.log("Completed");
             // finish
-            clearTimeout(to);
+            next = function () { };
 
             Common.assert(rt.getDepthOfState(docB) === 25);
             Common.assert(rt.getDepthOfState(docA) === 50);
@@ -338,7 +364,8 @@ var whichStateIsDeeper = function (callback) {
         doc = Operation.apply(op,doc);
         runOperation(rt, op);
         rt.sync();
-    },1);
+    };
+    next();
 };
 
 var checkpointOT = function (callback) {
@@ -368,12 +395,12 @@ var checkpointOT = function (callback) {
         });
     };
     [rtA, rtB].forEach(function (rt) {
-        rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb) });
+        rt.onMessage(function (msg, cb) { onMsg(rt, msg, cb); });
         rt.start();
     });
 
     var i = 0;
-    var to = setInterval(function () {
+    var to = xsetInterval(function () {
         if (syncing) { return; }
         i++;
         if (i < 20) {
@@ -418,13 +445,15 @@ var getAuthBlock = function (callback) {
     var messages = 0;
     rt.onMessage(function (msg, cb) {
         messages++;
-        cb(); // must be sync because of the setInterval below
+        cb(); // must be sync because of the xsetInterval below
     });
     rt.start();
 
     var i = 0;
     var oldUserDoc;
-    var to = setInterval(function () {
+    var oldAuthBlock;
+    var oldAuthDoc;
+    var to = xsetInterval(function () {
         // on the 51st change, grab the block
         if (i === 50) {
             oldAuthBlock = rt.getAuthBlock();
@@ -449,7 +478,76 @@ var getAuthBlock = function (callback) {
     },1);
 };
 
-var main = module.exports.main = function (cycles, callback) {
+var benchmarkSyncCycle = function (messageList, authDoc, callback) {
+    var rt = registerNode('benchmarkSyncCycle()', '', { checkpointInterval: 1000, logLevel: 0 });
+    rt.start();
+    for (var i = 0; i < messageList.length; i++) {
+        rt.message(messageList[i]);
+    }
+    var intr = setInterval(function () {
+        if (rt.getAuthDoc() === authDoc) {
+            clearInterval(intr);
+            rt.abort();
+            callback();
+        } else {
+            console.log('waiting');
+        }
+    });
+};
+
+var benchmarkSync = function (callback) {
+    var doc = '';
+// create a chainpad
+    var rt = registerNode('benchmarkSync()', '', { checkpointInterval: 1000 });
+    var messages = 0;
+    var messageList = [];
+    rt.onMessage(function (msg, cb) {
+        messages++;
+        messageList.push(msg);
+        cb(); // must be sync because of the xsetInterval below
+    });
+    rt.start();
+
+    var i = 0;
+    var oldUserDoc;
+    var to = xsetInterval(function () {
+        // on the 100th random change, check if getting the state at oldAuthBlock works...
+        if (i++ > 200) {
+            clearTimeout(to);
+            rt.abort();
+            var wait = function () {
+                if (messages !== i) { setTimeout(wait); return; }
+                var ad = rt.getAuthDoc();
+                var again = function (cycles) {
+                    var t0 = +new Date();
+                    var times = [];
+                    benchmarkSyncCycle(messageList, ad, function () {
+                        var time = (+new Date()) - t0;
+                        times.push(time);
+                        console.log('cycle ' + cycles + ' ' + time + 'ms');
+                        if (cycles >= 10) {
+                            var avg = times.reduce(function (x, y) { return x+y; }) / times.length;
+                            console.log(avg + 'ms  average time to sync');
+                            callback();
+                            return;
+                        }
+                        again(cycles+1);
+                    });
+                };
+                again(0);
+            };
+            wait();
+        }
+
+        // fire off another operation
+        var op = Operation.create(doc.length, 0, 'A');
+        doc = Operation.apply(op, doc);
+        runOperation(rt, op);
+        rt.sync();
+    },10);
+};
+
+var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         startup(waitFor());
     }).nThen(function (waitFor) {
@@ -466,5 +564,7 @@ var main = module.exports.main = function (cycles, callback) {
         checkpointOT(waitFor());
     }).nThen(function (waitFor) {
         getAuthBlock(waitFor());
+    }).nThen(function (waitFor) {
+        benchmarkSync(waitFor());
     }).nThen(callback);
 };

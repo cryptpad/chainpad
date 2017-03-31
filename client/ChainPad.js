@@ -1,3 +1,4 @@
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,11 +15,12 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = module.exports.Common = require('./Common');
 var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
-var Sha = module.exports.Sha = require('./SHA256');
+var Sha = module.exports.Sha = require('./sha256');
 
 var ChainPad = {};
 
@@ -38,13 +40,6 @@ var DEFAULT_AVERAGE_SYNC_MILLISECONDS = 300;
 // which have checkpoints not where we expect them to be.
 var DEFAULT_STRICT_CHECKPOINT_VALIDATION = false;
 
-var enterChainPad = function (realtime, func) {
-    return function () {
-        if (realtime.failed) { return; }
-        func.apply(null, arguments);
-    };
-};
-
 var debug = function (realtime, msg) {
     if (realtime.logLevel > 0) {
         console.log("[" + realtime.userName + "]  " + msg);
@@ -62,10 +57,10 @@ var schedule = function (realtime, func, timeout) {
     if (!timeout) {
         timeout = Math.floor(Math.random() * 2 * realtime.config.avgSyncMilliseconds);
     }
-    var to = setTimeout(enterChainPad(realtime, function () {
+    var to = setTimeout(function () {
         realtime.schedules.splice(realtime.schedules.indexOf(to), 1);
         func();
-    }), timeout);
+    }, timeout);
     realtime.schedules.push(to);
     return to;
 };
@@ -82,12 +77,12 @@ var onMessage = function (realtime, message, callback) {
     if (!realtime.messageHandlers.length) {
         callback("no onMessage() handler registered");
     }
-    for (var i = 0; i < realtime.messageHandlers.length; i++) {
-        realtime.messageHandlers[i](message, function () {
+    realtime.messageHandlers.forEach(function (handler) {
+        handler(message, function () {
             callback.apply(null, arguments);
             callback = function () { };
         });
-    }
+    });
 };
 
 var sendMessage = function (realtime, msg, callback) {
@@ -100,13 +95,12 @@ var sendMessage = function (realtime, msg, callback) {
         } else {
             var pending = realtime.pending;
             realtime.pending = null;
+            if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
             handleMessage(realtime, strMsg, true);
             pending.callback();
         }
     });
-
-    msg.hashOf = msg.hashOf || Message.hashOf(msg);
 
     var timeout = schedule(realtime, function () {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
@@ -137,6 +131,11 @@ var settle = function (realtime) {
     });
 };
 
+var inversePatch = function (patch) {
+    if (!patch.mut.inverseOf) { throw new Error(); }
+    return patch.mut.inverseOf;
+};
+
 var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
     if (realtime.syncSchedule && !realtime.pending) {
@@ -158,13 +157,17 @@ var sync = function (realtime) {
         return;
     }
 
-    if (((parentCount(realtime, realtime.best) + 1) % realtime.config.checkpointInterval) === 0) {
+    var pc = parentCount(realtime, realtime.best) + 1;
+    if ((pc % realtime.config.checkpointInterval) === 0) {
         var best = realtime.best;
-        debug(realtime, "Sending checkpoint");
+        debug(realtime, "Sending checkpoint (interval [" + realtime.config.checkpointInterval +
+            "]) patch no [" + pc + "]");
+        debug(realtime, parentCount(realtime, realtime.best));
+        if (!best || !best.content || !inversePatch(best.content)) { throw new Error(); }
         var cpp = Patch.createCheckpoint(realtime.authDoc,
                                          realtime.authDoc,
-                                         realtime.best.content.inverseOf.parentHash);
-        var cp = Message.create(Message.CHECKPOINT, cpp, realtime.best.hashOf);
+                                         inversePatch(best.content).parentHash);
+        var cp = Message.create(Message.CHECKPOINT, cpp, best.hashOf);
         sendMessage(realtime, cp, function () {
             debug(realtime, "Checkpoint sent and accepted");
         });
@@ -187,7 +190,7 @@ var sync = function (realtime) {
     });
 };
 
-var storeMessage = function (realtime, msg) {
+var storeMessage = function (realtime, msg /*:Message_t*/) {
     Common.assert(msg.lastMsgHash);
     Common.assert(msg.hashOf);
     realtime.messages[msg.hashOf] = msg;
@@ -208,32 +211,74 @@ var forgetMessage = function (realtime, msg) {
     var children = realtime.messagesByParent[msg.hashOf];
     if (children) {
         for (var i = 0; i < children.length; i++) {
-            delete children[i].parent;
+            delete children[i].mut.parent;
         }
     }
 };
 
-var create = ChainPad.create = function (config) {
-    config = config || {};
-    var initialState = config.initialState || '';
-    config.checkpointInterval = config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL;
-    config.avgSyncMilliseconds = config.avgSyncMilliseconds || DEFAULT_AVERAGE_SYNC_MILLISECONDS;
-    config.strictCheckpointValidation =
-        config.strictCheckpointValidation || DEFAULT_STRICT_CHECKPOINT_VALIDATION;
+/*::
+import type { Sha256_t } from './sha256';
+import type { Patch_t } from './Patch';
+import type { Message_t } from './Message';
+type ChainPad_Internal_t = {
+    type: 'ChainPad',
+    authDoc: string,
+    config: ChainPad_Config_t,
+    logLevel: number,
+    uncommitted: Patch_t,
+    uncommittedDocLength: number,
+    patchHandlers: Array<(Patch_t)=>void>,
+    changeHandlers: Array<(number, number, string)=>void>,
+    messageHandlers: Array<(string, ()=>void)=>void>,
+    schedules: Array<number>,
+    aborted: boolean,
+    syncSchedule: number,
+    userInterfaceContent: string,
+    setContentPatch: ?Patch_t,
+    pending: ?{ hash: Sha256_t, callback: ()=>void },
+    messages: { [Sha256_t]: Message_t },
+    messagesByParent: { [Sha256_t]: Message_t },
+    rootMessage: Message_t,
+    onSettle: Array<()=>void>,
+    userName: string,
+    best: Message_t
+};
+*/
+
+var create = ChainPad.create = function (config /*:ChainPad_Config_t*/) {
+
+    var zeroPatch = Patch.create(EMPTY_STR_HASH);
+    zeroPatch.mut.inverseOf = Patch.invert(zeroPatch, '');
+    zeroPatch.mut.inverseOf.mut.inverseOf = zeroPatch;
+    var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
+    zeroMsg.mut.parentCount = 0;
+    zeroMsg.mut.isInitialMessage = true;
+    var best = zeroMsg;
+
+    var initMsg;
+    if (config.initialState !== '') {
+        var initPatch = Patch.create(EMPTY_STR_HASH);
+        Patch.addOperation(initPatch, Operation.create(0, 0, config.initialState));
+        initPatch.mut.inverseOf = Patch.invert(initPatch, '');
+        initPatch.mut.inverseOf.mut.inverseOf = initPatch;
+        initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
+        initMsg.mut.isInitialMessage = true;
+        best = initMsg;
+    }
 
     var realtime = {
         type: 'ChainPad',
 
-        authDoc: '',
+        authDoc: config.initialState,
 
         config: config,
 
-        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        logLevel: config.logLevel,
 
         /** A patch representing all uncommitted work. */
-        uncommitted: null,
+        uncommitted: Patch.create(inversePatch(best.content).parentHash),
 
-        uncommittedDocLength: initialState.length,
+        uncommittedDocLength: config.initialState.length,
 
         patchHandlers: [],
         changeHandlers: [],
@@ -243,67 +288,40 @@ var create = ChainPad.create = function (config) {
         schedules: [],
         aborted: false,
 
-        syncSchedule: null,
-
-        registered: false,
+        syncSchedule: -1,
 
         // this is only used if PARANOIA is enabled.
-        userInterfaceContent: undefined,
+        userInterfaceContent: config.initialState,
 
         // If we want to set the content to a particular thing, this patch will be sent across the
         // wire. If the patch is not accepted we will not try to recover it. This is used for
         // setting initial state.
-        setContentPatch: null,
-
-        failed: false,
+        setContentPatch: initMsg,
 
         // hash and callback for previously send patch, currently in flight.
-        pending: null,
+        pending: undefined,
 
         messages: {},
         messagesByParent: {},
 
-        rootMessage: null,
+        rootMessage: zeroMsg,
 
         onSettle: [],
 
-        userName: config.userName || 'anonymous',
+        userName: config.userName,
+
+        best: best
     };
-
-    var zeroPatch = Patch.create(EMPTY_STR_HASH);
-    zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
-    zeroPatch.inverseOf.inverseOf = zeroPatch;
-    var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
-    zeroMsg.hashOf = Message.hashOf(zeroMsg);
-    zeroMsg.parentCount = 0;
-    zeroMsg.isInitialMessage = true;
     storeMessage(realtime, zeroMsg);
-    realtime.rootMessage = zeroMsg;
-    realtime.best = zeroMsg;
-
-    if (initialState !== '') {
-        var initPatch = Patch.create(EMPTY_STR_HASH);
-        Patch.addOperation(initPatch, Operation.create(0, 0, initialState));
-        initPatch.inverseOf = Patch.invert(initPatch, '');
-        initPatch.inverseOf.inverseOf = initPatch;
-        var initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
-        initMsg.hashOf = Message.hashOf(initMsg);
-        initMsg.isInitialMessage = true;
+    if (initMsg) {
         storeMessage(realtime, initMsg);
-        realtime.best = initMsg;
-        realtime.authDoc = initialState;
-        realtime.setContentPatch = initMsg;
-    }
-    realtime.uncommitted = Patch.create(realtime.best.content.inverseOf.parentHash);
-
-    if (Common.PARANOIA) {
-        realtime.userInterfaceContent = initialState;
     }
     return realtime;
 };
 
 var getParent = function (realtime, message) {
-    return message.parent = message.parent || realtime.messages[message.lastMsgHash];
+    var parent = message.mut.parent = message.mut.parent || realtime.messages[message.lastMsgHash];
+    return parent;
 };
 
 var check = ChainPad.check = function(realtime) {
@@ -313,9 +331,7 @@ var check = ChainPad.check = function(realtime) {
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
 
     var uiDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
-    if (uiDoc.length !== realtime.uncommittedDocLength) {
-        Common.assert(0);
-    }
+    Common.assert(uiDoc.length === realtime.uncommittedDocLength);
     if (realtime.userInterfaceContent !== '') {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
@@ -324,13 +340,15 @@ var check = ChainPad.check = function(realtime) {
 
     var doc = realtime.authDoc;
     var patchMsg = realtime.best;
-    Common.assert(patchMsg.content.inverseOf.parentHash === realtime.uncommitted.parentHash);
+    Common.assert(inversePatch(patchMsg.content).parentHash === realtime.uncommitted.parentHash);
     var patches = [];
     do {
         patches.push(patchMsg);
-        doc = Patch.apply(patchMsg.content.inverseOf, doc);
+        doc = Patch.apply(inversePatch(patchMsg.content), doc);
     } while ((patchMsg = getParent(realtime, patchMsg)));
-    Common.assert(doc === '');
+    if (realtime.rootMessage.content.isCheckpoint) {
+        if (doc !== realtime.rootMessage.content.operations[0].toInsert) { throw new Error(); }
+    } else if (doc !== '') { throw new Error(); }
     while ((patchMsg = patches.pop())) {
         doc = Patch.apply(patchMsg.content, doc);
     }
@@ -350,7 +368,8 @@ var doOperation = ChainPad.doOperation = function (realtime, op) {
 var doPatch = ChainPad.doPatch = function (realtime, patch) {
     if (Common.PARANOIA) {
         check(realtime);
-        Common.assert(Patch.invert(realtime.uncommitted).parentHash === patch.parentHash);
+        Common.assert(Patch.invert(realtime.uncommitted, realtime.authDoc).parentHash ===
+            patch.parentHash);
         realtime.userInterfaceContent = Patch.apply(patch, realtime.userInterfaceContent);
     }
     Patch.check(patch, realtime.uncommittedDocLength);
@@ -359,21 +378,35 @@ var doPatch = ChainPad.doPatch = function (realtime, patch) {
 };
 
 var isAncestorOf = function (realtime, ancestor, decendent) {
-    if (!decendent || !ancestor) { return false; }
-    if (ancestor === decendent) { return true; }
-    return isAncestorOf(realtime, ancestor, getParent(realtime, decendent));
+    if (!ancestor) { return false; }
+    for (;;) {
+        if (!decendent) { return false; }
+        if (ancestor === decendent) { return true; }
+        decendent = getParent(realtime, decendent);
+    }
 };
 
 var parentCount = function (realtime, message) {
-    if (typeof(message.parentCount) !== 'number') {
-        message.parentCount = parentCount(realtime, getParent(realtime, message)) + 1;
+    if (typeof(message.mut.parentCount) === 'number') { return message.mut.parentCount; }
+    var msgs = [];
+    for (; (typeof(message.mut.parentCount) !== 'number'); message = getParent(realtime, message)) {
+        if (!message) {
+            if (message === realtime.rootMessage) {
+                throw new Error("root message does not have parent count");
+            }
+            throw new Error("parentCount called on unlinked message");
+        }
+        msgs.unshift(message);
     }
-    return message.parentCount;
+    var pc = message.mut.parentCount;
+    for (var i = 0; i < msgs.length; i++) {
+        msgs[i].mut.parentCount = ++pc;
+    }
+    return pc;
 };
 
 var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
-    Common.assert(patch.inverseOf);
     if (isFromMe) {
         // Case 1: We're applying a patch which we originally created (yay our work was accepted)
         //         We will merge the inverse of the patch with our uncommitted work in order that
@@ -385,7 +418,7 @@ var applyPatch = function (realtime, isFromMe, patch) {
         // uncommitted work. Whatever we "add" to the authDoc we "remove" from the uncommittedWork.
         //
         Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
-        realtime.uncommitted = Patch.merge(patch.inverseOf, realtime.uncommitted);
+        realtime.uncommitted = Patch.merge(inversePatch(patch), realtime.uncommitted);
 
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
@@ -394,19 +427,19 @@ var applyPatch = function (realtime, isFromMe, patch) {
             Patch.transform(
                 realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
     }
-    realtime.uncommitted.parentHash = patch.inverseOf.parentHash;
+    Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
 
     realtime.authDoc = Patch.apply(patch, realtime.authDoc);
 
     if (Common.PARANOIA) {
-        Common.assert(realtime.uncommitted.parentHash === patch.inverseOf.parentHash);
+        Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
         Common.assert(Sha.hex_sha256(realtime.authDoc) === realtime.uncommitted.parentHash);
         realtime.userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     }
 };
 
 var revertPatch = function (realtime, isFromMe, patch) {
-    applyPatch(realtime, isFromMe, patch.inverseOf);
+    applyPatch(realtime, isFromMe, inversePatch(patch));
 };
 
 var getBestChild = function (realtime, msg) {
@@ -420,22 +453,17 @@ var getBestChild = function (realtime, msg) {
 };
 
 var pushUIPatch = function (realtime, patch) {
-    if (patch.operations.length) {
-        // push the uncommittedPatch out to the user interface.
-        for (var i = 0; i < realtime.patchHandlers.length; i++) {
-            realtime.patchHandlers[i](patch);
-        }
-        for (var i = 0; i < realtime.changeHandlers.length; i++) {
-            for (var j = patch.operations.length; j >= 0; j--) {
-                var op = patch.operations[j];
-                realtime.changeHandlers[i](op.offset, op.toRemove, op.toInsert);
-            }
-        }
-    }
+    if (!patch.operations.length) { return; }
+    // push the uncommittedPatch out to the user interface.
+    realtime.patchHandlers.forEach(function (handler) { handler(patch); });
+    realtime.changeHandlers.forEach(function (handler) {
+        patch.operations.forEach(function (op) {
+            handler(op.offset, op.toRemove, op.toInsert);
+        });
+    });
 };
 
 var validContent = function (realtime, contentGetter) {
-    if (!realtime.config.validateContent) { return true; }
     try {
         return realtime.config.validateContent(contentGetter());
     } catch (e) {
@@ -444,17 +472,22 @@ var validContent = function (realtime, contentGetter) {
     return false;
 };
 
+var forEachParent = function (realtime, patch, callback) {
+    for (var m = getParent(realtime, patch); m; m = getParent(realtime, m)) {
+        if (callback(m) === false) { return; }
+    }
+};
+
+var mkInverse = function (patch, content) {
+    if (patch.mut.inverseOf) { return; }
+    var inverse = patch.mut.inverseOf = Patch.invert(patch, content);
+    inverse.mut.inverseOf = patch;
+};
+
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
-
-    if (msg.messageType !== Message.PATCH && msg.messageType !== Message.CHECKPOINT) {
-        debug(realtime, "unrecognized message type " + msg.messageType);
-        return;
-    }
-
-    msg.hashOf = Message.hashOf(msg);
 
     if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
 
@@ -470,7 +503,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     }
 
     if (msg.content.isCheckpoint &&
-        !validContent(realtime, function () { return msg.content.operations[0].toInsert }))
+        !validContent(realtime, function () { return msg.content.operations[0].toInsert; }))
     {
         // If it's not a checkpoint, we verify it later on...
         debug(realtime, "Checkpoint [" + msg.hashOf + "] failed content validation");
@@ -480,9 +513,10 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     storeMessage(realtime, msg);
 
     if (!isAncestorOf(realtime, realtime.rootMessage, msg)) {
-        if (msg.content.isCheckpoint && realtime.best.isInitialMessage) {
+        if (msg.content.isCheckpoint && realtime.best.mut.isInitialMessage) {
             // We're starting with a trucated chain from a checkpoint, we will adopt this
             // as the root message and go with it...
+            debug(realtime, 'applying checkpoint [' + msg.hashOf + ']');
             var userDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
             Common.assert(!Common.PARANOIA || realtime.userInterfaceContent === userDoc);
             var fixUserDocPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
@@ -491,7 +525,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             fixUserDocPatch =
                 Patch.simplify(fixUserDocPatch, userDoc, realtime.config.operationSimplify);
 
-            msg.parentCount = 0;
+            msg.mut.parentCount = 0;
             realtime.rootMessage = realtime.best = msg;
 
             realtime.authDoc = msg.content.operations[0].toInsert;
@@ -503,7 +537,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             return;
         } else {
             // we'll probably find the missing parent later.
-            debug(realtime, "Patch [" + msg.hashOf + "] not connected to root");
+            debug(realtime, "Patch [" + msg.hashOf + "] not connected to root (parent: [" +
+                msg.lastMsgHash + "])");
             if (Common.PARANOIA) { check(realtime); }
             return;
         }
@@ -512,7 +547,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     // of this message fills in a hole in the chain which makes another patch better, swap to the
     // best child of this patch since longest chain always wins.
     msg = getBestChild(realtime, msg);
-    msg.isFromMe = isFromMe;
+    msg.mut.isFromMe = isFromMe;
     var patch = msg.content;
 
     // Find the ancestor of this patch which is in the main chain, reverting as necessary
@@ -552,21 +587,31 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
     var authDocAtTimeOfPatch = realtime.authDoc;
 
-    for (var i = 0; i < toRevert.length; i++) {
-        Common.assert(typeof(toRevert[i].content.inverseOf) !== 'undefined');
-        authDocAtTimeOfPatch = Patch.apply(toRevert[i].content.inverseOf, authDocAtTimeOfPatch);
-    }
+    toRevert.forEach(function (tr) {
+        authDocAtTimeOfPatch = Patch.apply(inversePatch(tr.content), authDocAtTimeOfPatch);
+    });
 
-    // toApply.length-1 because we do not want to apply the new patch.
-    for (var i = 0; i < toApply.length-1; i++) {
-        if (typeof(toApply[i].content.inverseOf) === 'undefined') {
-            toApply[i].content.inverseOf = Patch.invert(toApply[i].content, authDocAtTimeOfPatch);
-            toApply[i].content.inverseOf.inverseOf = toApply[i].content;
-        }
-        authDocAtTimeOfPatch = Patch.apply(toApply[i].content, authDocAtTimeOfPatch);
-    }
+    toApply.forEach(function (ta, i) {
+        // toApply.length-1 because we do not want to apply the new patch.
+        if (i === toApply.length - 1) { return; }
+        mkInverse(ta.content, authDocAtTimeOfPatch);
+        authDocAtTimeOfPatch = Patch.apply(ta.content, authDocAtTimeOfPatch);
+    });
 
-    if (Sha.hex_sha256(authDocAtTimeOfPatch) !== patch.parentHash) {
+    var headAtTimeOfPatch = realtime.best;
+    if (toApply.length > 1) {
+        headAtTimeOfPatch = toApply[toApply.length-2];
+        Common.assert(headAtTimeOfPatch);
+    } else if (toRevert.length) {
+        headAtTimeOfPatch = getParent(realtime, toRevert[toRevert.length-1]);
+        Common.assert(headAtTimeOfPatch);
+    }
+    Common.assert(inversePatch(headAtTimeOfPatch.content).parentHash);
+    Common.assert(!Common.PARANOIA ||
+        inversePatch(headAtTimeOfPatch.content).parentHash ===
+            Sha.hex_sha256(authDocAtTimeOfPatch));
+
+    if (inversePatch(headAtTimeOfPatch.content).parentHash !== patch.parentHash) {
         debug(realtime, "patch [" + msg.hashOf + "] parentHash is not valid");
         if (Common.PARANOIA) { check(realtime); }
         if (Common.TESTING) { throw new Error(); }
@@ -577,17 +622,16 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (patch.isCheckpoint) {
         // Ok, we have a checkpoint patch.
         // If the chain length is not equal to checkpointInterval then this patch is invalid.
-        var i = 0;
         var checkpointP;
-        for (var m = getParent(realtime, msg); m; m = getParent(realtime, m)) {
+        forEachParent(realtime, msg, function (m) {
             if (m.content.isCheckpoint) {
                 if (checkpointP) {
                     checkpointP = m;
-                    break;
+                    return false;
                 }
                 checkpointP = m;
             }
-        }
+        });
         if (checkpointP && checkpointP !== realtime.rootMessage) {
             var point = parentCount(realtime, checkpointP);
             if (realtime.config.strictCheckpointValidation &&
@@ -602,10 +646,10 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
             // Time to prune some old messages from the chain
             debug(realtime, "checkpoint [" + msg.hashOf + "]");
-            for (var m = getParent(realtime, checkpointP); m; m = getParent(realtime, m)) {
+            forEachParent(realtime, checkpointP, function (m) {
                 debug(realtime, "pruning [" + m.hashOf + "]");
                 forgetMessage(realtime, m);
-            }
+            });
             realtime.rootMessage = checkpointP;
         }
     } else {
@@ -627,8 +671,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         }
     }
 
-    patch.inverseOf = Patch.invert(patch, authDocAtTimeOfPatch);
-    patch.inverseOf.inverseOf = patch;
+    mkInverse(patch, authDocAtTimeOfPatch);
 
     realtime.uncommitted = Patch.simplify(
         realtime.uncommitted, realtime.authDoc, realtime.config.operationSimplify);
@@ -640,18 +683,20 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     // Derive the patch for the user's uncommitted work
     var uncommittedPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
 
-    for (var i = 0; i < toRevert.length; i++) {
-        debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
-        if (toRevert[i].isFromMe) { debug(realtime, "reverting patch 'from me' [" + JSON.stringify(toRevert[i].content.operations) + "]"); }
-        uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
-        revertPatch(realtime, toRevert[i].isFromMe, toRevert[i].content);
-    }
+    toRevert.forEach(function (tr) {
+        debug(realtime, "reverting [" + tr.hashOf + "]");
+        if (tr.mut.isFromMe) {
+            debug(realtime, "reverting patch 'from me' [" + JSON.stringify(tr.content.operations) + "]");
+        }
+        uncommittedPatch = Patch.merge(uncommittedPatch, inversePatch(tr.content));
+        revertPatch(realtime, tr.mut.isFromMe, tr.content);
+    });
 
-    for (var i = 0; i < toApply.length; i++) {
-        debug(realtime, "applying [" + toApply[i].hashOf + "]");
-        uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
-        applyPatch(realtime, toApply[i].isFromMe, toApply[i].content);
-    }
+    toApply.forEach(function (ta) {
+        debug(realtime, "applying [" + ta.hashOf + "]");
+        uncommittedPatch = Patch.merge(uncommittedPatch, ta.content);
+        applyPatch(realtime, ta.mut.isFromMe, ta.content);
+    });
 
     uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);
     uncommittedPatch = Patch.simplify(
@@ -680,7 +725,7 @@ var getDepthOfState = function (content, minDepth, realtime) {
     Common.assert(typeof(content) === 'string');
 
     // minimum depth is an optional argument which defaults to zero
-    var minDepth = minDepth || 0;
+    minDepth = minDepth || 0;
 
     if (minDepth === 0 && realtime.authDoc === content) {
         return 0;
@@ -712,23 +757,23 @@ var getContentAtState = function (realtime, msg) {
     while (patches[0] !== realtime.rootMessage) {
         var parent = getParent(realtime, patches[0]);
         if (!parent) {
-            return { error: 'not connected to root' };
+            return { error: 'not connected to root', doc: undefined };
         }
         patches.unshift(parent);
     }
     var doc = '';
     if (realtime.rootMessage.content.operations.length) {
         Common.assert(realtime.rootMessage.content.operations.length === 1);
-        var doc = realtime.rootMessage.content.operations[0].toInsert;
+        doc = realtime.rootMessage.content.operations[0].toInsert;
     }
     for (var i = 1; i < patches.length; i++) {
         doc = Patch.apply(patches[i].content, doc);
     }
-    return { doc: doc };
+    return { error: undefined, doc: doc };
 };
 
 var wrapMessage = function (realtime, msg) {
-    var wrapped = Object.freeze({
+    return Object.freeze({
         type: 'Block',
         hashOf: msg.hashOf,
         lastMsgHash: msg.lastMsgHash,
@@ -739,71 +784,105 @@ var wrapMessage = function (realtime, msg) {
         },
         getContent: function () { return getContentAtState(realtime, msg); },
         getPatch: function () { return Patch.clone(msg.content); },
-        getInversePatch: function () { return Patch.clone(msg.content.inverseOf); },
+        getInversePatch: function () { return Patch.clone(inversePatch(msg.content)); },
         equals: function (block, msgOpt) {
             if (msgOpt) { return msg === msgOpt; }
             Common.assert(block.type === 'Block');
             return block.equals(null, msg);
         }
     });
-    return wrapped;
 };
 
-module.exports.create = function (conf) {
-    var realtime = ChainPad.create(conf);
+/*::
+import type { Operation_Simplify_t, Operation_Transform_t } from './Operation';
+export type ChainPad_Config_t = {
+    initialState: string,
+    checkpointInterval: number,
+    avgSyncMilliseconds: number,
+    strictCheckpointValidation: boolean,
+    operationSimplify: Operation_Simplify_t,
+    logLevel: number,
+    transformFunction: Operation_Transform_t,
+    userName: string,
+    validateContent: (string)=>boolean
+};
+*/
+
+var mkConfig = function (config) {
+    config = config || {};
+    return Object.freeze({
+        initialState: config.initialState || '',
+        checkpointInterval: config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL,
+        avgSyncMilliseconds: config.avgSyncMilliseconds || DEFAULT_AVERAGE_SYNC_MILLISECONDS,
+        strictCheckpointValidation: config.strictCheckpointValidation ||
+            DEFAULT_STRICT_CHECKPOINT_VALIDATION,
+        operationSimplify: config.operationSimplify || Operation.simplify,
+        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        transformFunction: config.transformFunction || Operation.transform0,
+        userName: config.userName || 'anonymous',
+        validateContent: config.validateContent || function () { return true; }
+    });
+};
+
+module.exports.create = function (conf /*:Object*/) {
+    var realtime = ChainPad.create(mkConfig(conf));
     var out = {
-        onPatch: enterChainPad(realtime, function (handler) {
+        onPatch: function (handler /*:(Patch_t)=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.patchHandlers.push(handler);
-        }),
-        patch: enterChainPad(realtime, function (patch, x, y) {
+        },
+        patch: function (patch /*:Patch_t|number*/, x /*:?number*/, y /*:?string*/) {
             if (typeof(patch) === 'number') {
                 // Actually they meant to call realtime.change()
+                if (!x || !y) { throw new Error(); }
                 out.change(patch, x, y);
                 return;
             }
             doPatch(realtime, patch);
-        }),
+        },
 
-        onChange: enterChainPad(realtime, function (handler) {
+        onChange: function (handler /*:(number, number, string)=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.changeHandlers.push(handler);
-        }),
-        change: enterChainPad(realtime, function (offset, count, chars) {
+        },
+
+        change: function (offset /*:number*/, count /*:number*/, chars /*:string*/) {
             if (count === 0 && chars === '') { return; }
             doOperation(realtime, Operation.create(offset, count, chars));
-        }),
+        },
 
-        onMessage: enterChainPad(realtime, function (handler) {
+        onMessage: function (handler /*:(string, ()=>void)=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.messageHandlers.push(handler);
-        }),
+        },
 
-        message: enterChainPad(realtime, function (message) {
+        message: function (message /*:string*/) {
             handleMessage(realtime, message, false);
-        }),
+        },
 
-        start: enterChainPad(realtime, function () {
+        start: function () {
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
-        }),
+        },
 
-        abort: enterChainPad(realtime, function () {
+        abort: function () {
             realtime.aborted = true;
-            realtime.schedules.forEach(function (s) { clearTimeout(s) });
-        }),
+            realtime.schedules.forEach(function (s) { clearTimeout(s); });
+        },
 
-        sync: enterChainPad(realtime, function () { sync(realtime); }),
+        sync: function () {
+            sync(realtime);
+        },
 
         getAuthDoc: function () { return realtime.authDoc; },
 
         getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); },
 
-        getDepthOfState: function (content, minDepth) {
+        getDepthOfState: function (content /*:string*/, minDepth /*:?number*/) {
             return getDepthOfState(content, minDepth, realtime);
         },
 
-        onSettle: function (handler) {
+        onSettle: function (handler /*:()=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.onSettle.push(handler);
         },
@@ -812,11 +891,13 @@ module.exports.create = function (conf) {
             return wrapMessage(realtime, realtime.best);
         },
 
-        getBlockForHash: function (hash) {
+        getBlockForHash: function (hash /*:string*/) {
             Common.assert(typeof(hash) === 'string');
             var msg = realtime.messages[hash];
             if (msg) { return wrapMessage(realtime, msg); }
-        }
+        },
+
+        _: undefined
     };
     if (Common.DEBUG) {
         out._ = realtime;

@@ -29,23 +29,16 @@ var Os = require('os');
     g.include('./Common.js');
     g.include('./Patch.js');
     g.include('./Operation.js');
+    g.include('./sha256.js');
+    g.include('./sha256/exports.js');
+    g.include('./sha256/hash.js');
+    g.include('./sha256/sha256.asm.js');
+    g.include('./sha256/sha256.js');
+    g.include('./sha256/utils.js');
 
     g.export('ChainPad');
     //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
     g.render(Fs.createWriteStream('./chainpad.js'));
-})();
-
-(function buildRandHtml() {
-    var g = new Glue();
-    g.basepath('./client');
-    g.main('RandHtml.js');
-    g.include('RandHtml.js');
-    g.include('./SHA256.js');
-    g.include('./Elements.js');
-
-    g.export('RandHtml');
-    //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
-    g.render(Fs.createWriteStream('./randhtml.js'));
 })();
 
 var cycles = 1;

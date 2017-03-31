@@ -1,13 +1,17 @@
+/* globals document */
+"use strict";
 var testNames = require('testNames');
 var nThen = require('nthen');
 
 var cycles = 1;
 
-var textArea = document.getElementById('log-textarea');
-console.log = function (x) {
-    textArea.value = textArea.value + x + '\n';
-    textArea.scrollTop = textArea.scrollHeight;
-};
+if (typeof(document) !== 'undefined') {
+    var textArea = document.getElementById('log-textarea');
+    console.log = function (x) {
+        textArea.value = textArea.value + x + '\n';
+        textArea.scrollTop = textArea.scrollHeight;
+    };
+}
 
 var timeOne = new Date().getTime();
 

@@ -8,8 +8,6 @@ to run with a dumb broadcasting server but with minimal effort, the algorithm co
 full peer-to-peer. Because the ChainPad server need not be aware of the content which is being
 edited, different types of editors can exist in harmony on the same system.
 
-Issues: http://jira.xwiki.org/browse/RTCHAINPAD
-
 License: GNU AGPLv3.0 or at your option, any later version.
 
 ## Getting Started

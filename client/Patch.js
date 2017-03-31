@@ -1,3 +1,4 @@
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -14,22 +15,50 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 var Operation = require('./Operation');
-var Sha = require('./SHA256');
+var Sha = require('./sha256');
 
 var Patch = module.exports;
 
-var create = Patch.create = function (parentHash) {
-    return {
+/*::
+import type {
+    Operation_t,
+    Operation_Packed_t,
+    Operation_Simplify_t,
+    Operation_Transform_t
+} from './Operation';
+import type { Sha256_t } from './sha256';
+export type Patch_t = {
+    type: 'Patch',
+    operations: Array<Operation_t>,
+    parentHash: Sha256_t,
+    isCheckpoint: boolean,
+    mut: {
+        inverseOf: ?Patch_t,
+    }
+};
+export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
+*/
+
+var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
+    var out = Object.freeze({
         type: 'Patch',
         operations: [],
         parentHash: parentHash,
-        isCheckpoint: false
-    };
+        isCheckpoint: !!isCheckpoint,
+        mut: {
+            inverseOf: undefined
+        }
+    });
+    if (isCheckpoint) {
+        out.mut.inverseOf = out;
+    }
+    return out;
 };
 
-var check = Patch.check = function (patch, docLength_opt) {
+var check = Patch.check = function (patch /*:any*/, docLength_opt /*:?number*/) /*:Patch_t*/ {
     Common.assert(patch.type === 'Patch');
     Common.assert(Array.isArray(patch.operations));
     Common.assert(/^[0-9a-f]{64}$/.test(patch.parentHash));
@@ -49,11 +78,12 @@ var check = Patch.check = function (patch, docLength_opt) {
             Common.assert(!docLength_opt || patch.operations[0].toRemove === docLength_opt);
         }
     }
+    return patch;
 };
 
-var toObj = Patch.toObj = function (patch) {
+var toObj = Patch.toObj = function (patch /*:Patch_t*/) {
     if (Common.PARANOIA) { check(patch); }
-    var out = new Array(patch.operations.length+1);
+    var out /*:Array<Operation_Packed_t|Sha256_t>*/ = new Array(patch.operations.length+1);
     var i;
     for (i = 0; i < patch.operations.length; i++) {
         out[i] = Operation.toObj(patch.operations[i]);
@@ -62,14 +92,13 @@ var toObj = Patch.toObj = function (patch) {
     return out;
 };
 
-var fromObj = Patch.fromObj = function (obj) {
+var fromObj = Patch.fromObj = function (obj /*:Patch_Packed_t*/, isCheckpoint /*:?boolean*/) {
     Common.assert(Array.isArray(obj) && obj.length > 0);
-    var patch = create();
+    var patch = create(Sha.check(obj[obj.length-1]), isCheckpoint);
     var i;
     for (i = 0; i < obj.length-1; i++) {
         patch.operations[i] = Operation.fromObj(obj[i]);
     }
-    patch.parentHash = obj[i];
     if (Common.PARANOIA) { check(patch); }
     return patch;
 };
@@ -78,19 +107,17 @@ var hash = function (text) {
     return Sha.hex_sha256(text);
 };
 
-var addOperation = Patch.addOperation = function (patch, op) {
+var addOperation = Patch.addOperation = function (patch /*:Patch_t*/, op /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(patch);
         Operation.check(op);
     }
     for (var i = 0; i < patch.operations.length; i++) {
         if (Operation.shouldMerge(patch.operations[i], op)) {
-            op = Operation.merge(patch.operations[i], op);
+            var maybeOp = Operation.merge(patch.operations[i], op);
             patch.operations.splice(i,1);
-            if (op === null) {
-                //console.log("operations cancelled eachother");
-                return;
-            }
+            if (maybeOp === null) { return; }
+            op = maybeOp;
             i--;
         } else {
             var out = Operation.rebase(patch.operations[i], op);
@@ -108,31 +135,31 @@ var addOperation = Patch.addOperation = function (patch, op) {
     if (Common.PARANOIA) { check(patch); }
 };
 
-var createCheckpoint = Patch.createCheckpoint =
-    function (parentContent, checkpointContent, parentContentHash_opt)
+var createCheckpoint = Patch.createCheckpoint = function (
+    parentContent /*:string*/,
+    checkpointContent /*:string*/,
+    parentContentHash_opt /*:?string*/)
 {
     var op = Operation.create(0, parentContent.length, checkpointContent);
     if (Common.PARANOIA && parentContentHash_opt) {
         Common.assert(parentContentHash_opt === hash(parentContent));
     }
     parentContentHash_opt = parentContentHash_opt || hash(parentContent);
-    var out = create(parentContentHash_opt);
-    addOperation(out, op);
-    out.isCheckpoint = true;
+    var out = create(parentContentHash_opt, true);
+    out.operations[0] = op;
     return out;
 };
 
-var clone = Patch.clone = function (patch) {
+var clone = Patch.clone = function (patch /*:Patch_t*/) {
     if (Common.PARANOIA) { check(patch); }
-    var out = create();
-    out.parentHash = patch.parentHash;
+    var out = create(patch.parentHash, patch.isCheckpoint);
     for (var i = 0; i < patch.operations.length; i++) {
-        out.operations[i] = Operation.clone(patch.operations[i]);
+        out.operations[i] = patch.operations[i];
     }
     return out;
 };
 
-var merge = Patch.merge = function (oldPatch, newPatch) {
+var merge = Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/) {
     if (Common.PARANOIA) {
         check(oldPatch);
         check(newPatch);
@@ -140,7 +167,7 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
     if (oldPatch.isCheckpoint) {
         Common.assert(newPatch.parentHash === oldPatch.parentHash);
         if (newPatch.isCheckpoint) {
-            return create(oldPatch.parentHash)
+            return create(oldPatch.parentHash);
         }
         return clone(newPatch);
     } else if (newPatch.isCheckpoint) {
@@ -153,7 +180,7 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
     return oldPatch;
 };
 
-var apply = Patch.apply = function (patch, doc)
+var apply = Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
@@ -167,7 +194,7 @@ var apply = Patch.apply = function (patch, doc)
     return newDoc;
 };
 
-var lengthChange = Patch.lengthChange = function (patch)
+var lengthChange = Patch.lengthChange = function (patch /*:Patch_t*/)
 {
     if (Common.PARANOIA) { check(patch); }
     var out = 0;
@@ -177,51 +204,60 @@ var lengthChange = Patch.lengthChange = function (patch)
     return out;
 };
 
-var invert = Patch.invert = function (patch, doc)
+var invert = Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
-    var rpatch = create();
     var newDoc = doc;
+    var operations = new Array(patch.operations.length);
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        rpatch.operations[i] = Operation.invert(patch.operations[i], newDoc);
+        operations[i] = Operation.invert(patch.operations[i], newDoc);
         newDoc = Operation.apply(patch.operations[i], newDoc);
     }
-    for (var i = rpatch.operations.length-1; i >= 0; i--) {
-        for (var j = i - 1; j >= 0; j--) {
-            rpatch.operations[i].offset += rpatch.operations[j].toRemove;
-            rpatch.operations[i].offset -= rpatch.operations[j].toInsert.length;
+    var opOffsets = new Array(patch.operations.length);
+    (function () {
+        for (var i = operations.length-1; i >= 0; i--) {
+            opOffsets[i] = operations[i].offset;
+            for (var j = i - 1; j >= 0; j--) {
+                opOffsets[i] += operations[j].toRemove - operations[j].toInsert.length;
+            }
         }
+    }());
+    var rpatch = create(Sha.hex_sha256(newDoc), patch.isCheckpoint);
+    rpatch.operations.splice(0, rpatch.operations.length);
+    for (var j = 0; j < operations.length; j++) {
+        rpatch.operations[j] =
+            Operation.create(opOffsets[j], operations[j].toRemove, operations[j].toInsert);
     }
-    rpatch.parentHash = Sha.hex_sha256(newDoc);
-    rpatch.isCheckpoint = patch.isCheckpoint;
     if (Common.PARANOIA) { check(rpatch); }
     return rpatch;
 };
 
-var simplify = Patch.simplify = function (patch, doc, operationSimplify)
+var simplify = Patch.simplify = function (
+    patch /*:Patch_t*/,
+    doc /*:string*/,
+    operationSimplify /*:Operation_Simplify_t*/ )
 {
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
-    operationSimplify = operationSimplify || Operation.simplify;
     var spatch = create(patch.parentHash);
     var newDoc = doc;
     var outOps = [];
     var j = 0;
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        outOps[j] = operationSimplify(patch.operations[i], newDoc, Operation.simplify);
-        if (outOps[j]) {
-            newDoc = Operation.apply(outOps[j], newDoc);
-            j++;
+        var outOp = operationSimplify(patch.operations[i], newDoc, Operation.simplify);
+        if (outOp) {
+            newDoc = Operation.apply(outOp, newDoc);
+            outOps[j++] = outOp;
         }
     }
-    spatch.operations = outOps.reverse();
+    Array.prototype.push.apply(spatch.operations, outOps.reverse());
     if (!spatch.operations[0]) {
         spatch.operations.shift();
     }
@@ -231,7 +267,7 @@ var simplify = Patch.simplify = function (patch, doc, operationSimplify)
     return spatch;
 };
 
-var equals = Patch.equals = function (patchA, patchB) {
+var equals = Patch.equals = function (patchA /*:Patch_t*/, patchB /*:Patch_t*/) {
     if (patchA.operations.length !== patchB.operations.length) { return false; }
     for (var i = 0; i < patchA.operations.length; i++) {
         if (!Operation.equals(patchA.operations[i], patchB.operations[i])) { return false; }
@@ -243,52 +279,52 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform = Patch.transform = function (origToTransform, transformBy, doc, transformFunction) {
+var transform = Patch.transform = function (
+    origToTransform /*:Patch_t*/,
+    transformBy /*:Patch_t*/,
+    doc /*:string*/,
+    transformFunction /*:Operation_Transform_t*/ )
+{
     if (Common.PARANOIA) {
         check(origToTransform, doc.length);
         check(transformBy, doc.length);
-        Common.assert(Sha.hex_sha256(doc) === origToTransform.parentHash);
+        if (Sha.hex_sha256(doc) !== origToTransform.parentHash) { throw new Error("wrong hash"); }
     }
-    Common.assert(origToTransform.parentHash === transformBy.parentHash);
+    if (origToTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
     var resultOfTransformBy = apply(transformBy, doc);
 
     var toTransform = clone(origToTransform);
     var text = doc;
+    var out = create(transformBy.mut.inverseOf
+        ? transformBy.mut.inverseOf.parentHash
+        : Sha.hex_sha256(resultOfTransformBy));
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        if (isCheckpointOp(toTransform.operations[i], text)) { continue; }
+        var tti = toTransform.operations[i];
+        if (isCheckpointOp(tti, text)) { continue; }
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
             if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
             if (Common.DEBUG) {
                 console.log(
-                    ['TRANSFORM', text, toTransform.operations[i], transformBy.operations[j]]
+                    ['TRANSFORM', text, tti, transformBy.operations[j]]
                 );
             }
             try {
-                toTransform.operations[i] = Operation.transform(text,
-                                                                toTransform.operations[i],
-                                                                transformBy.operations[j],
-                                                                transformFunction);
+                tti = Operation.transform(text, tti, transformBy.operations[j], transformFunction);
             } catch (e) {
                 console.error("The pluggable transform function threw an error, " +
                     "failing operational transformation");
+                console.error(e.stack);
                 return create(Sha.hex_sha256(resultOfTransformBy));
             }
-            if (!toTransform.operations[i]) {
+            if (!tti) {
                 break;
             }
         }
-        if (Common.PARANOIA && toTransform.operations[i]) {
-            Operation.check(toTransform.operations[i], resultOfTransformBy.length);
+        if (tti) {
+            if (Common.PARANOIA) { Operation.check(tti, resultOfTransformBy.length); }
+            addOperation(out, tti);
         }
     }
-    var out = create(transformBy.parentHash);
-    for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        if (toTransform.operations[i]) {
-            addOperation(out, toTransform.operations[i]);
-        }
-    }
-
-    out.parentHash = Sha.hex_sha256(resultOfTransformBy);
 
     if (Common.PARANOIA) {
         check(out, resultOfTransformBy.length);
@@ -296,7 +332,7 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     return out;
 };
 
-var random = Patch.random = function (doc, opCount) {
+var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     Common.assert(typeof(doc) === 'string');
     opCount = opCount || (Math.floor(Math.random() * 30) + 1);
     var patch = create(Sha.hex_sha256(doc));

@@ -2,6 +2,7 @@
 var r=function(){var e="function"==typeof require&&require,r=function(i,o,u){o||(o=0);var n=r.resolve(i,o),t=r.m[o][n];if(!t&&e){if(t=e(n))return t}else if(t&&t.c&&(o=t.c,n=t.m,t=r.m[o][t.m],!t))throw new Error('failed to require "'+n+'" from '+o);if(!t)throw new Error('failed to require "'+i+'" from '+u);return t.exports||(t.exports={},t.call(t.exports,t,t.exports,r.relative(n,o))),t.exports};return r.resolve=function(e,n){var i=e,t=e+".js",o=e+"/index.js";return r.m[n][t]&&t?t:r.m[n][o]&&o?o:i},r.relative=function(e,t){return function(n){if("."!=n.charAt(0))return r(n,t,e);var o=e.split("/"),f=n.split("/");o.pop();for(var i=0;i<f.length;i++){var u=f[i];".."==u?o.pop():"."!=u&&o.push(u)}return r(o.join("/"),t,e)}},r}();r.m = [];
 r.m[0] = {
 "Patch.js": function(module, exports, require){
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -18,22 +19,50 @@ r.m[0] = {
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 var Operation = require('./Operation');
-var Sha = require('./SHA256');
+var Sha = require('./sha256');
 
 var Patch = module.exports;
 
-var create = Patch.create = function (parentHash) {
-    return {
+/*::
+import type {
+    Operation_t,
+    Operation_Packed_t,
+    Operation_Simplify_t,
+    Operation_Transform_t
+} from './Operation';
+import type { Sha256_t } from './sha256';
+export type Patch_t = {
+    type: 'Patch',
+    operations: Array<Operation_t>,
+    parentHash: Sha256_t,
+    isCheckpoint: boolean,
+    mut: {
+        inverseOf: ?Patch_t,
+    }
+};
+export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
+*/
+
+var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
+    var out = Object.freeze({
         type: 'Patch',
         operations: [],
         parentHash: parentHash,
-        isCheckpoint: false
-    };
+        isCheckpoint: !!isCheckpoint,
+        mut: {
+            inverseOf: undefined
+        }
+    });
+    if (isCheckpoint) {
+        out.mut.inverseOf = out;
+    }
+    return out;
 };
 
-var check = Patch.check = function (patch, docLength_opt) {
+var check = Patch.check = function (patch /*:any*/, docLength_opt /*:?number*/) /*:Patch_t*/ {
     Common.assert(patch.type === 'Patch');
     Common.assert(Array.isArray(patch.operations));
     Common.assert(/^[0-9a-f]{64}$/.test(patch.parentHash));
@@ -53,11 +82,12 @@ var check = Patch.check = function (patch, docLength_opt) {
             Common.assert(!docLength_opt || patch.operations[0].toRemove === docLength_opt);
         }
     }
+    return patch;
 };
 
-var toObj = Patch.toObj = function (patch) {
+var toObj = Patch.toObj = function (patch /*:Patch_t*/) {
     if (Common.PARANOIA) { check(patch); }
-    var out = new Array(patch.operations.length+1);
+    var out /*:Array<Operation_Packed_t|Sha256_t>*/ = new Array(patch.operations.length+1);
     var i;
     for (i = 0; i < patch.operations.length; i++) {
         out[i] = Operation.toObj(patch.operations[i]);
@@ -66,14 +96,13 @@ var toObj = Patch.toObj = function (patch) {
     return out;
 };
 
-var fromObj = Patch.fromObj = function (obj) {
+var fromObj = Patch.fromObj = function (obj /*:Patch_Packed_t*/, isCheckpoint /*:?boolean*/) {
     Common.assert(Array.isArray(obj) && obj.length > 0);
-    var patch = create();
+    var patch = create(Sha.check(obj[obj.length-1]), isCheckpoint);
     var i;
     for (i = 0; i < obj.length-1; i++) {
         patch.operations[i] = Operation.fromObj(obj[i]);
     }
-    patch.parentHash = obj[i];
     if (Common.PARANOIA) { check(patch); }
     return patch;
 };
@@ -82,19 +111,17 @@ var hash = function (text) {
     return Sha.hex_sha256(text);
 };
 
-var addOperation = Patch.addOperation = function (patch, op) {
+var addOperation = Patch.addOperation = function (patch /*:Patch_t*/, op /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(patch);
         Operation.check(op);
     }
     for (var i = 0; i < patch.operations.length; i++) {
         if (Operation.shouldMerge(patch.operations[i], op)) {
-            op = Operation.merge(patch.operations[i], op);
+            var maybeOp = Operation.merge(patch.operations[i], op);
             patch.operations.splice(i,1);
-            if (op === null) {
-                //console.log("operations cancelled eachother");
-                return;
-            }
+            if (maybeOp === null) { return; }
+            op = maybeOp;
             i--;
         } else {
             var out = Operation.rebase(patch.operations[i], op);
@@ -112,31 +139,31 @@ var addOperation = Patch.addOperation = function (patch, op) {
     if (Common.PARANOIA) { check(patch); }
 };
 
-var createCheckpoint = Patch.createCheckpoint =
-    function (parentContent, checkpointContent, parentContentHash_opt)
+var createCheckpoint = Patch.createCheckpoint = function (
+    parentContent /*:string*/,
+    checkpointContent /*:string*/,
+    parentContentHash_opt /*:?string*/)
 {
     var op = Operation.create(0, parentContent.length, checkpointContent);
     if (Common.PARANOIA && parentContentHash_opt) {
         Common.assert(parentContentHash_opt === hash(parentContent));
     }
     parentContentHash_opt = parentContentHash_opt || hash(parentContent);
-    var out = create(parentContentHash_opt);
-    addOperation(out, op);
-    out.isCheckpoint = true;
+    var out = create(parentContentHash_opt, true);
+    out.operations[0] = op;
     return out;
 };
 
-var clone = Patch.clone = function (patch) {
+var clone = Patch.clone = function (patch /*:Patch_t*/) {
     if (Common.PARANOIA) { check(patch); }
-    var out = create();
-    out.parentHash = patch.parentHash;
+    var out = create(patch.parentHash, patch.isCheckpoint);
     for (var i = 0; i < patch.operations.length; i++) {
-        out.operations[i] = Operation.clone(patch.operations[i]);
+        out.operations[i] = patch.operations[i];
     }
     return out;
 };
 
-var merge = Patch.merge = function (oldPatch, newPatch) {
+var merge = Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/) {
     if (Common.PARANOIA) {
         check(oldPatch);
         check(newPatch);
@@ -144,7 +171,7 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
     if (oldPatch.isCheckpoint) {
         Common.assert(newPatch.parentHash === oldPatch.parentHash);
         if (newPatch.isCheckpoint) {
-            return create(oldPatch.parentHash)
+            return create(oldPatch.parentHash);
         }
         return clone(newPatch);
     } else if (newPatch.isCheckpoint) {
@@ -157,7 +184,7 @@ var merge = Patch.merge = function (oldPatch, newPatch) {
     return oldPatch;
 };
 
-var apply = Patch.apply = function (patch, doc)
+var apply = Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
@@ -171,7 +198,7 @@ var apply = Patch.apply = function (patch, doc)
     return newDoc;
 };
 
-var lengthChange = Patch.lengthChange = function (patch)
+var lengthChange = Patch.lengthChange = function (patch /*:Patch_t*/)
 {
     if (Common.PARANOIA) { check(patch); }
     var out = 0;
@@ -181,51 +208,60 @@ var lengthChange = Patch.lengthChange = function (patch)
     return out;
 };
 
-var invert = Patch.invert = function (patch, doc)
+var invert = Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
-    var rpatch = create();
     var newDoc = doc;
+    var operations = new Array(patch.operations.length);
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        rpatch.operations[i] = Operation.invert(patch.operations[i], newDoc);
+        operations[i] = Operation.invert(patch.operations[i], newDoc);
         newDoc = Operation.apply(patch.operations[i], newDoc);
     }
-    for (var i = rpatch.operations.length-1; i >= 0; i--) {
-        for (var j = i - 1; j >= 0; j--) {
-            rpatch.operations[i].offset += rpatch.operations[j].toRemove;
-            rpatch.operations[i].offset -= rpatch.operations[j].toInsert.length;
+    var opOffsets = new Array(patch.operations.length);
+    (function () {
+        for (var i = operations.length-1; i >= 0; i--) {
+            opOffsets[i] = operations[i].offset;
+            for (var j = i - 1; j >= 0; j--) {
+                opOffsets[i] += operations[j].toRemove - operations[j].toInsert.length;
+            }
         }
+    }());
+    var rpatch = create(Sha.hex_sha256(newDoc), patch.isCheckpoint);
+    rpatch.operations.splice(0, rpatch.operations.length);
+    for (var j = 0; j < operations.length; j++) {
+        rpatch.operations[j] =
+            Operation.create(opOffsets[j], operations[j].toRemove, operations[j].toInsert);
     }
-    rpatch.parentHash = Sha.hex_sha256(newDoc);
-    rpatch.isCheckpoint = patch.isCheckpoint;
     if (Common.PARANOIA) { check(rpatch); }
     return rpatch;
 };
 
-var simplify = Patch.simplify = function (patch, doc, operationSimplify)
+var simplify = Patch.simplify = function (
+    patch /*:Patch_t*/,
+    doc /*:string*/,
+    operationSimplify /*:Operation_Simplify_t*/ )
 {
     if (Common.PARANOIA) {
         check(patch);
         Common.assert(typeof(doc) === 'string');
         Common.assert(Sha.hex_sha256(doc) === patch.parentHash);
     }
-    operationSimplify = operationSimplify || Operation.simplify;
     var spatch = create(patch.parentHash);
     var newDoc = doc;
     var outOps = [];
     var j = 0;
     for (var i = patch.operations.length-1; i >= 0; i--) {
-        outOps[j] = operationSimplify(patch.operations[i], newDoc, Operation.simplify);
-        if (outOps[j]) {
-            newDoc = Operation.apply(outOps[j], newDoc);
-            j++;
+        var outOp = operationSimplify(patch.operations[i], newDoc, Operation.simplify);
+        if (outOp) {
+            newDoc = Operation.apply(outOp, newDoc);
+            outOps[j++] = outOp;
         }
     }
-    spatch.operations = outOps.reverse();
+    Array.prototype.push.apply(spatch.operations, outOps.reverse());
     if (!spatch.operations[0]) {
         spatch.operations.shift();
     }
@@ -235,7 +271,7 @@ var simplify = Patch.simplify = function (patch, doc, operationSimplify)
     return spatch;
 };
 
-var equals = Patch.equals = function (patchA, patchB) {
+var equals = Patch.equals = function (patchA /*:Patch_t*/, patchB /*:Patch_t*/) {
     if (patchA.operations.length !== patchB.operations.length) { return false; }
     for (var i = 0; i < patchA.operations.length; i++) {
         if (!Operation.equals(patchA.operations[i], patchB.operations[i])) { return false; }
@@ -247,52 +283,52 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform = Patch.transform = function (origToTransform, transformBy, doc, transformFunction) {
+var transform = Patch.transform = function (
+    origToTransform /*:Patch_t*/,
+    transformBy /*:Patch_t*/,
+    doc /*:string*/,
+    transformFunction /*:Operation_Transform_t*/ )
+{
     if (Common.PARANOIA) {
         check(origToTransform, doc.length);
         check(transformBy, doc.length);
-        Common.assert(Sha.hex_sha256(doc) === origToTransform.parentHash);
+        if (Sha.hex_sha256(doc) !== origToTransform.parentHash) { throw new Error("wrong hash"); }
     }
-    Common.assert(origToTransform.parentHash === transformBy.parentHash);
+    if (origToTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
     var resultOfTransformBy = apply(transformBy, doc);
 
     var toTransform = clone(origToTransform);
     var text = doc;
+    var out = create(transformBy.mut.inverseOf
+        ? transformBy.mut.inverseOf.parentHash
+        : Sha.hex_sha256(resultOfTransformBy));
     for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        if (isCheckpointOp(toTransform.operations[i], text)) { continue; }
+        var tti = toTransform.operations[i];
+        if (isCheckpointOp(tti, text)) { continue; }
         for (var j = transformBy.operations.length-1; j >= 0; j--) {
             if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
             if (Common.DEBUG) {
                 console.log(
-                    ['TRANSFORM', text, toTransform.operations[i], transformBy.operations[j]]
+                    ['TRANSFORM', text, tti, transformBy.operations[j]]
                 );
             }
             try {
-                toTransform.operations[i] = Operation.transform(text,
-                                                                toTransform.operations[i],
-                                                                transformBy.operations[j],
-                                                                transformFunction);
+                tti = Operation.transform(text, tti, transformBy.operations[j], transformFunction);
             } catch (e) {
                 console.error("The pluggable transform function threw an error, " +
                     "failing operational transformation");
+                console.error(e.stack);
                 return create(Sha.hex_sha256(resultOfTransformBy));
             }
-            if (!toTransform.operations[i]) {
+            if (!tti) {
                 break;
             }
         }
-        if (Common.PARANOIA && toTransform.operations[i]) {
-            Operation.check(toTransform.operations[i], resultOfTransformBy.length);
+        if (tti) {
+            if (Common.PARANOIA) { Operation.check(tti, resultOfTransformBy.length); }
+            addOperation(out, tti);
         }
     }
-    var out = create(transformBy.parentHash);
-    for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        if (toTransform.operations[i]) {
-            addOperation(out, toTransform.operations[i]);
-        }
-    }
-
-    out.parentHash = Sha.hex_sha256(resultOfTransformBy);
 
     if (Common.PARANOIA) {
         check(out, resultOfTransformBy.length);
@@ -300,7 +336,7 @@ var transform = Patch.transform = function (origToTransform, transformBy, doc, t
     return out;
 };
 
-var random = Patch.random = function (doc, opCount) {
+var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     Common.assert(typeof(doc) === 'string');
     opCount = opCount || (Math.floor(Math.random() * 30) + 1);
     var patch = create(Sha.hex_sha256(doc));
@@ -312,6 +348,69 @@ var random = Patch.random = function (doc, opCount) {
     }
     check(patch);
     return patch;
+};
+
+},
+"sha256.js": function(module, exports, require){
+/*@flow*/
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+var asm_sha256 = require('./sha256/exports.js');
+var old = require('./SHA256.js');
+var Common = require('./Common');
+
+/*::
+export type Sha256_t = string;
+*/
+
+var brokenTextEncode = function (str) {
+    var out = new Uint8Array(str.length);
+    for (var i = 0; i < str.length; i++) {
+        out[i] = str.charCodeAt(i) & 0xff;
+    }
+    return out;
+};
+
+module.exports.check = function (hex /*:any*/) /*:Sha256_t*/ {
+    if (typeof(hex) !== 'string') { throw new Error(); }
+    if (!/[a-f0-9]{64}/.test(hex)) { throw new Error(); }
+    return hex;
+};
+
+module.exports.hex_sha256 = function (d /*:string*/) /*:Sha256_t*/ {
+    d = d+'';
+    var ret = asm_sha256.hex(brokenTextEncode(d));
+    if (Common.PARANOIA) {
+        var oldHash = old.hex_sha256(d);
+        if (oldHash !== ret) {
+            try {
+                throw new Error();
+            } catch (e) {
+                console.log({
+                    hashErr: e,
+                    badHash: d,
+                    asmHasher: asm_sha256.hex,
+                    oldHasher: old.hex_sha256
+                });
+            }
+            return oldHash;
+        }
+    }
+    return ret;
 };
 
 },
@@ -400,6 +499,8 @@ var random = Patch.random = function (doc, opCount) {
 
 },
 "Common.js": function(module, exports, require){
+/*@flow*/
+/* globals localStorage */
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -416,7 +517,7 @@ var random = Patch.random = function (doc, opCount) {
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
-
+"use strict";
 var DEBUG = module.exports.DEBUG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
@@ -431,17 +532,17 @@ var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_M
 var TESTING = module.exports.TESTING =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
 
-var assert = module.exports.assert = function (expr) {
+var assert = module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
 
-var isUint = module.exports.isUint = function (integer) {
+var isUint = module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
         (Math.floor(integer) === integer) &&
         (integer >= 0);
 };
 
-var randomASCII = module.exports.randomASCII = function (length) {
+var randomASCII = module.exports.randomASCII = function (length /*:number*/) {
     var content = [];
     for (var i = 0; i < length; i++) {
         content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 57 + 65 );
@@ -449,14 +550,15 @@ var randomASCII = module.exports.randomASCII = function (length) {
     return content.join('');
 };
 
-var strcmp = module.exports.strcmp = function (a, b) {
+var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     if (PARANOIA && typeof(a) !== 'string') { throw new Error(); }
     if (PARANOIA && typeof(b) !== 'string') { throw new Error(); }
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );
-}
+};
 
 },
 "Message.js": function(module, exports, require){
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -473,68 +575,88 @@ var strcmp = module.exports.strcmp = function (a, b) {
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 var Operation = require('./Operation');
 var Patch = require('./Patch');
-var Sha = require('./SHA256');
+var Sha = require('./sha256');
 
 var Message = module.exports;
 
-var REGISTER     = Message.REGISTER     = 0;
-var REGISTER_ACK = Message.REGISTER_ACK = 1;
 var PATCH        = Message.PATCH        = 2;
-var DISCONNECT   = Message.DISCONNECT   = 3;
 var CHECKPOINT   = Message.CHECKPOINT   = 4;
 
-var check = Message.check = function(msg) {
-    Common.assert(msg.type === 'Message');
-    if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
-        Patch.check(msg.content);
-        Common.assert(typeof(msg.lastMsgHash) === 'string');
-    } else {
-        throw new Error("invalid message type [" + msg.messageType + "]");
+/*::
+import type { Sha256_t } from './sha256'
+import type { Patch_t } from './Patch'
+export type Message_Type_t = 2 | 4;
+export type Message_t = {
+    type: 'Message',
+    messageType: Message_Type_t,
+    content: Patch_t,
+    lastMsgHash: Sha256_t,
+    hashOf: Sha256_t,
+    mut: {
+        parentCount: ?number,
+        isInitialMessage: boolean,
+        parent: ?Message_t,
+        isFromMe: boolean
     }
+}
+*/
+
+var check = Message.check = function(msg /*:any*/) /*:Message_t*/ {
+    Common.assert(msg.type === 'Message');
+    Common.assert(msg.messageType === PATCH || msg.messageType === CHECKPOINT);
+    Patch.check(msg.content);
+    Common.assert(typeof(msg.lastMsgHash) === 'string');
+    return msg;
 };
 
-var create = Message.create = function (type, content, lastMsgHash) {
+var DUMMY_HASH /*:Sha256_t*/ = "";
+
+var create = Message.create = function (
+    type /*:Message_Type_t*/,
+    content /*:Patch_t*/,
+    lastMsgHash /*:Sha256_t*/) /*:Message_t*/
+{
     var msg = {
         type: 'Message',
         messageType: type,
         content: content,
-        lastMsgHash: lastMsgHash
+        lastMsgHash: lastMsgHash,
+        hashOf: DUMMY_HASH,
+        mut: {
+            parentCount: undefined,
+            isInitialMessage: false,
+            isFromMe: false,
+            parent: undefined
+        }
     };
+    msg.hashOf = hashOf(msg);
     if (Common.PARANOIA) { check(msg); }
-    return msg;
+    return Object.freeze(msg);
 };
 
-var toString = Message.toString = function (msg) {
+// $FlowFixMe doesn't like the toString()
+var toString = Message.toString = function (msg /*:Message_t*/) {
     if (Common.PARANOIA) { check(msg); }
     if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
+        if (!msg.content) { throw new Error(); }
         return JSON.stringify([msg.messageType, Patch.toObj(msg.content), msg.lastMsgHash]);
     } else {
         throw new Error();
     }
 };
 
-var discardBencode = function (msg, arr) {
-    var len = msg.substring(0,msg.indexOf(':'));
-    msg = msg.substring(len.length+1);
-    var value = msg.substring(0,Number(len));
-    msg = msg.substring(value.length);
-
-    if (arr) { arr.push(value); }
-    return msg;
-};
-
-var fromString = Message.fromString = function (str) {
+var fromString = Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var m = JSON.parse(str);
     if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
-    var msg = create(m[0], Patch.fromObj(m[1]), m[2]);
-    if (m[0] === CHECKPOINT) { msg.content.isCheckpoint = true; }
-    return msg;
+    var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
+    return Object.freeze(msg);
 };
 
-var hashOf = Message.hashOf = function (msg) {
+var hashOf = Message.hashOf = function (msg /*:Message_t*/) {
     if (Common.PARANOIA) { check(msg); }
     var hash = Sha.hex_sha256(toString(msg));
     return hash;
@@ -542,6 +664,7 @@ var hashOf = Message.hashOf = function (msg) {
 
 },
 "ChainPad.js": function(module, exports, require){
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -558,11 +681,12 @@ var hashOf = Message.hashOf = function (msg) {
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = module.exports.Common = require('./Common');
 var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
-var Sha = module.exports.Sha = require('./SHA256');
+var Sha = module.exports.Sha = require('./sha256');
 
 var ChainPad = {};
 
@@ -582,13 +706,6 @@ var DEFAULT_AVERAGE_SYNC_MILLISECONDS = 300;
 // which have checkpoints not where we expect them to be.
 var DEFAULT_STRICT_CHECKPOINT_VALIDATION = false;
 
-var enterChainPad = function (realtime, func) {
-    return function () {
-        if (realtime.failed) { return; }
-        func.apply(null, arguments);
-    };
-};
-
 var debug = function (realtime, msg) {
     if (realtime.logLevel > 0) {
         console.log("[" + realtime.userName + "]  " + msg);
@@ -606,10 +723,10 @@ var schedule = function (realtime, func, timeout) {
     if (!timeout) {
         timeout = Math.floor(Math.random() * 2 * realtime.config.avgSyncMilliseconds);
     }
-    var to = setTimeout(enterChainPad(realtime, function () {
+    var to = setTimeout(function () {
         realtime.schedules.splice(realtime.schedules.indexOf(to), 1);
         func();
-    }), timeout);
+    }, timeout);
     realtime.schedules.push(to);
     return to;
 };
@@ -626,12 +743,12 @@ var onMessage = function (realtime, message, callback) {
     if (!realtime.messageHandlers.length) {
         callback("no onMessage() handler registered");
     }
-    for (var i = 0; i < realtime.messageHandlers.length; i++) {
-        realtime.messageHandlers[i](message, function () {
+    realtime.messageHandlers.forEach(function (handler) {
+        handler(message, function () {
             callback.apply(null, arguments);
             callback = function () { };
         });
-    }
+    });
 };
 
 var sendMessage = function (realtime, msg, callback) {
@@ -644,13 +761,12 @@ var sendMessage = function (realtime, msg, callback) {
         } else {
             var pending = realtime.pending;
             realtime.pending = null;
+            if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
             handleMessage(realtime, strMsg, true);
             pending.callback();
         }
     });
-
-    msg.hashOf = msg.hashOf || Message.hashOf(msg);
 
     var timeout = schedule(realtime, function () {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
@@ -681,6 +797,11 @@ var settle = function (realtime) {
     });
 };
 
+var inversePatch = function (patch) {
+    if (!patch.mut.inverseOf) { throw new Error(); }
+    return patch.mut.inverseOf;
+};
+
 var sync = function (realtime) {
     if (Common.PARANOIA) { check(realtime); }
     if (realtime.syncSchedule && !realtime.pending) {
@@ -702,13 +823,17 @@ var sync = function (realtime) {
         return;
     }
 
-    if (((parentCount(realtime, realtime.best) + 1) % realtime.config.checkpointInterval) === 0) {
+    var pc = parentCount(realtime, realtime.best) + 1;
+    if ((pc % realtime.config.checkpointInterval) === 0) {
         var best = realtime.best;
-        debug(realtime, "Sending checkpoint");
+        debug(realtime, "Sending checkpoint (interval [" + realtime.config.checkpointInterval +
+            "]) patch no [" + pc + "]");
+        debug(realtime, parentCount(realtime, realtime.best));
+        if (!best || !best.content || !inversePatch(best.content)) { throw new Error(); }
         var cpp = Patch.createCheckpoint(realtime.authDoc,
                                          realtime.authDoc,
-                                         realtime.best.content.inverseOf.parentHash);
-        var cp = Message.create(Message.CHECKPOINT, cpp, realtime.best.hashOf);
+                                         inversePatch(best.content).parentHash);
+        var cp = Message.create(Message.CHECKPOINT, cpp, best.hashOf);
         sendMessage(realtime, cp, function () {
             debug(realtime, "Checkpoint sent and accepted");
         });
@@ -731,7 +856,7 @@ var sync = function (realtime) {
     });
 };
 
-var storeMessage = function (realtime, msg) {
+var storeMessage = function (realtime, msg /*:Message_t*/) {
     Common.assert(msg.lastMsgHash);
     Common.assert(msg.hashOf);
     realtime.messages[msg.hashOf] = msg;
@@ -752,32 +877,74 @@ var forgetMessage = function (realtime, msg) {
     var children = realtime.messagesByParent[msg.hashOf];
     if (children) {
         for (var i = 0; i < children.length; i++) {
-            delete children[i].parent;
+            delete children[i].mut.parent;
         }
     }
 };
 
-var create = ChainPad.create = function (config) {
-    config = config || {};
-    var initialState = config.initialState || '';
-    config.checkpointInterval = config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL;
-    config.avgSyncMilliseconds = config.avgSyncMilliseconds || DEFAULT_AVERAGE_SYNC_MILLISECONDS;
-    config.strictCheckpointValidation =
-        config.strictCheckpointValidation || DEFAULT_STRICT_CHECKPOINT_VALIDATION;
+/*::
+import type { Sha256_t } from './sha256';
+import type { Patch_t } from './Patch';
+import type { Message_t } from './Message';
+type ChainPad_Internal_t = {
+    type: 'ChainPad',
+    authDoc: string,
+    config: ChainPad_Config_t,
+    logLevel: number,
+    uncommitted: Patch_t,
+    uncommittedDocLength: number,
+    patchHandlers: Array<(Patch_t)=>void>,
+    changeHandlers: Array<(number, number, string)=>void>,
+    messageHandlers: Array<(string, ()=>void)=>void>,
+    schedules: Array<number>,
+    aborted: boolean,
+    syncSchedule: number,
+    userInterfaceContent: string,
+    setContentPatch: ?Patch_t,
+    pending: ?{ hash: Sha256_t, callback: ()=>void },
+    messages: { [Sha256_t]: Message_t },
+    messagesByParent: { [Sha256_t]: Message_t },
+    rootMessage: Message_t,
+    onSettle: Array<()=>void>,
+    userName: string,
+    best: Message_t
+};
+*/
+
+var create = ChainPad.create = function (config /*:ChainPad_Config_t*/) {
+
+    var zeroPatch = Patch.create(EMPTY_STR_HASH);
+    zeroPatch.mut.inverseOf = Patch.invert(zeroPatch, '');
+    zeroPatch.mut.inverseOf.mut.inverseOf = zeroPatch;
+    var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
+    zeroMsg.mut.parentCount = 0;
+    zeroMsg.mut.isInitialMessage = true;
+    var best = zeroMsg;
+
+    var initMsg;
+    if (config.initialState !== '') {
+        var initPatch = Patch.create(EMPTY_STR_HASH);
+        Patch.addOperation(initPatch, Operation.create(0, 0, config.initialState));
+        initPatch.mut.inverseOf = Patch.invert(initPatch, '');
+        initPatch.mut.inverseOf.mut.inverseOf = initPatch;
+        initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
+        initMsg.mut.isInitialMessage = true;
+        best = initMsg;
+    }
 
     var realtime = {
         type: 'ChainPad',
 
-        authDoc: '',
+        authDoc: config.initialState,
 
         config: config,
 
-        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        logLevel: config.logLevel,
 
         /** A patch representing all uncommitted work. */
-        uncommitted: null,
+        uncommitted: Patch.create(inversePatch(best.content).parentHash),
 
-        uncommittedDocLength: initialState.length,
+        uncommittedDocLength: config.initialState.length,
 
         patchHandlers: [],
         changeHandlers: [],
@@ -787,67 +954,40 @@ var create = ChainPad.create = function (config) {
         schedules: [],
         aborted: false,
 
-        syncSchedule: null,
-
-        registered: false,
+        syncSchedule: -1,
 
         // this is only used if PARANOIA is enabled.
-        userInterfaceContent: undefined,
+        userInterfaceContent: config.initialState,
 
         // If we want to set the content to a particular thing, this patch will be sent across the
         // wire. If the patch is not accepted we will not try to recover it. This is used for
         // setting initial state.
-        setContentPatch: null,
-
-        failed: false,
+        setContentPatch: initMsg,
 
         // hash and callback for previously send patch, currently in flight.
-        pending: null,
+        pending: undefined,
 
         messages: {},
         messagesByParent: {},
 
-        rootMessage: null,
+        rootMessage: zeroMsg,
 
         onSettle: [],
 
-        userName: config.userName || 'anonymous',
+        userName: config.userName,
+
+        best: best
     };
-
-    var zeroPatch = Patch.create(EMPTY_STR_HASH);
-    zeroPatch.inverseOf = Patch.invert(zeroPatch, '');
-    zeroPatch.inverseOf.inverseOf = zeroPatch;
-    var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
-    zeroMsg.hashOf = Message.hashOf(zeroMsg);
-    zeroMsg.parentCount = 0;
-    zeroMsg.isInitialMessage = true;
     storeMessage(realtime, zeroMsg);
-    realtime.rootMessage = zeroMsg;
-    realtime.best = zeroMsg;
-
-    if (initialState !== '') {
-        var initPatch = Patch.create(EMPTY_STR_HASH);
-        Patch.addOperation(initPatch, Operation.create(0, 0, initialState));
-        initPatch.inverseOf = Patch.invert(initPatch, '');
-        initPatch.inverseOf.inverseOf = initPatch;
-        var initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
-        initMsg.hashOf = Message.hashOf(initMsg);
-        initMsg.isInitialMessage = true;
+    if (initMsg) {
         storeMessage(realtime, initMsg);
-        realtime.best = initMsg;
-        realtime.authDoc = initialState;
-        realtime.setContentPatch = initMsg;
-    }
-    realtime.uncommitted = Patch.create(realtime.best.content.inverseOf.parentHash);
-
-    if (Common.PARANOIA) {
-        realtime.userInterfaceContent = initialState;
     }
     return realtime;
 };
 
 var getParent = function (realtime, message) {
-    return message.parent = message.parent || realtime.messages[message.lastMsgHash];
+    var parent = message.mut.parent = message.mut.parent || realtime.messages[message.lastMsgHash];
+    return parent;
 };
 
 var check = ChainPad.check = function(realtime) {
@@ -857,9 +997,7 @@ var check = ChainPad.check = function(realtime) {
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
 
     var uiDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
-    if (uiDoc.length !== realtime.uncommittedDocLength) {
-        Common.assert(0);
-    }
+    Common.assert(uiDoc.length === realtime.uncommittedDocLength);
     if (realtime.userInterfaceContent !== '') {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
@@ -868,13 +1006,15 @@ var check = ChainPad.check = function(realtime) {
 
     var doc = realtime.authDoc;
     var patchMsg = realtime.best;
-    Common.assert(patchMsg.content.inverseOf.parentHash === realtime.uncommitted.parentHash);
+    Common.assert(inversePatch(patchMsg.content).parentHash === realtime.uncommitted.parentHash);
     var patches = [];
     do {
         patches.push(patchMsg);
-        doc = Patch.apply(patchMsg.content.inverseOf, doc);
+        doc = Patch.apply(inversePatch(patchMsg.content), doc);
     } while ((patchMsg = getParent(realtime, patchMsg)));
-    Common.assert(doc === '');
+    if (realtime.rootMessage.content.isCheckpoint) {
+        if (doc !== realtime.rootMessage.content.operations[0].toInsert) { throw new Error(); }
+    } else if (doc !== '') { throw new Error(); }
     while ((patchMsg = patches.pop())) {
         doc = Patch.apply(patchMsg.content, doc);
     }
@@ -894,7 +1034,8 @@ var doOperation = ChainPad.doOperation = function (realtime, op) {
 var doPatch = ChainPad.doPatch = function (realtime, patch) {
     if (Common.PARANOIA) {
         check(realtime);
-        Common.assert(Patch.invert(realtime.uncommitted).parentHash === patch.parentHash);
+        Common.assert(Patch.invert(realtime.uncommitted, realtime.authDoc).parentHash ===
+            patch.parentHash);
         realtime.userInterfaceContent = Patch.apply(patch, realtime.userInterfaceContent);
     }
     Patch.check(patch, realtime.uncommittedDocLength);
@@ -903,21 +1044,35 @@ var doPatch = ChainPad.doPatch = function (realtime, patch) {
 };
 
 var isAncestorOf = function (realtime, ancestor, decendent) {
-    if (!decendent || !ancestor) { return false; }
-    if (ancestor === decendent) { return true; }
-    return isAncestorOf(realtime, ancestor, getParent(realtime, decendent));
+    if (!ancestor) { return false; }
+    for (;;) {
+        if (!decendent) { return false; }
+        if (ancestor === decendent) { return true; }
+        decendent = getParent(realtime, decendent);
+    }
 };
 
 var parentCount = function (realtime, message) {
-    if (typeof(message.parentCount) !== 'number') {
-        message.parentCount = parentCount(realtime, getParent(realtime, message)) + 1;
+    if (typeof(message.mut.parentCount) === 'number') { return message.mut.parentCount; }
+    var msgs = [];
+    for (; (typeof(message.mut.parentCount) !== 'number'); message = getParent(realtime, message)) {
+        if (!message) {
+            if (message === realtime.rootMessage) {
+                throw new Error("root message does not have parent count");
+            }
+            throw new Error("parentCount called on unlinked message");
+        }
+        msgs.unshift(message);
     }
-    return message.parentCount;
+    var pc = message.mut.parentCount;
+    for (var i = 0; i < msgs.length; i++) {
+        msgs[i].mut.parentCount = ++pc;
+    }
+    return pc;
 };
 
 var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
-    Common.assert(patch.inverseOf);
     if (isFromMe) {
         // Case 1: We're applying a patch which we originally created (yay our work was accepted)
         //         We will merge the inverse of the patch with our uncommitted work in order that
@@ -929,7 +1084,7 @@ var applyPatch = function (realtime, isFromMe, patch) {
         // uncommitted work. Whatever we "add" to the authDoc we "remove" from the uncommittedWork.
         //
         Common.assert(patch.parentHash === realtime.uncommitted.parentHash);
-        realtime.uncommitted = Patch.merge(patch.inverseOf, realtime.uncommitted);
+        realtime.uncommitted = Patch.merge(inversePatch(patch), realtime.uncommitted);
 
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
@@ -938,19 +1093,19 @@ var applyPatch = function (realtime, isFromMe, patch) {
             Patch.transform(
                 realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
     }
-    realtime.uncommitted.parentHash = patch.inverseOf.parentHash;
+    Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
 
     realtime.authDoc = Patch.apply(patch, realtime.authDoc);
 
     if (Common.PARANOIA) {
-        Common.assert(realtime.uncommitted.parentHash === patch.inverseOf.parentHash);
+        Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
         Common.assert(Sha.hex_sha256(realtime.authDoc) === realtime.uncommitted.parentHash);
         realtime.userInterfaceContent = Patch.apply(realtime.uncommitted, realtime.authDoc);
     }
 };
 
 var revertPatch = function (realtime, isFromMe, patch) {
-    applyPatch(realtime, isFromMe, patch.inverseOf);
+    applyPatch(realtime, isFromMe, inversePatch(patch));
 };
 
 var getBestChild = function (realtime, msg) {
@@ -964,22 +1119,17 @@ var getBestChild = function (realtime, msg) {
 };
 
 var pushUIPatch = function (realtime, patch) {
-    if (patch.operations.length) {
-        // push the uncommittedPatch out to the user interface.
-        for (var i = 0; i < realtime.patchHandlers.length; i++) {
-            realtime.patchHandlers[i](patch);
-        }
-        for (var i = 0; i < realtime.changeHandlers.length; i++) {
-            for (var j = patch.operations.length; j >= 0; j--) {
-                var op = patch.operations[j];
-                realtime.changeHandlers[i](op.offset, op.toRemove, op.toInsert);
-            }
-        }
-    }
+    if (!patch.operations.length) { return; }
+    // push the uncommittedPatch out to the user interface.
+    realtime.patchHandlers.forEach(function (handler) { handler(patch); });
+    realtime.changeHandlers.forEach(function (handler) {
+        patch.operations.forEach(function (op) {
+            handler(op.offset, op.toRemove, op.toInsert);
+        });
+    });
 };
 
 var validContent = function (realtime, contentGetter) {
-    if (!realtime.config.validateContent) { return true; }
     try {
         return realtime.config.validateContent(contentGetter());
     } catch (e) {
@@ -988,17 +1138,22 @@ var validContent = function (realtime, contentGetter) {
     return false;
 };
 
+var forEachParent = function (realtime, patch, callback) {
+    for (var m = getParent(realtime, patch); m; m = getParent(realtime, m)) {
+        if (callback(m) === false) { return; }
+    }
+};
+
+var mkInverse = function (patch, content) {
+    if (patch.mut.inverseOf) { return; }
+    var inverse = patch.mut.inverseOf = Patch.invert(patch, content);
+    inverse.mut.inverseOf = patch;
+};
+
 var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
-
-    if (msg.messageType !== Message.PATCH && msg.messageType !== Message.CHECKPOINT) {
-        debug(realtime, "unrecognized message type " + msg.messageType);
-        return;
-    }
-
-    msg.hashOf = Message.hashOf(msg);
 
     if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
 
@@ -1014,7 +1169,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     }
 
     if (msg.content.isCheckpoint &&
-        !validContent(realtime, function () { return msg.content.operations[0].toInsert }))
+        !validContent(realtime, function () { return msg.content.operations[0].toInsert; }))
     {
         // If it's not a checkpoint, we verify it later on...
         debug(realtime, "Checkpoint [" + msg.hashOf + "] failed content validation");
@@ -1024,9 +1179,10 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     storeMessage(realtime, msg);
 
     if (!isAncestorOf(realtime, realtime.rootMessage, msg)) {
-        if (msg.content.isCheckpoint && realtime.best.isInitialMessage) {
+        if (msg.content.isCheckpoint && realtime.best.mut.isInitialMessage) {
             // We're starting with a trucated chain from a checkpoint, we will adopt this
             // as the root message and go with it...
+            debug(realtime, 'applying checkpoint [' + msg.hashOf + ']');
             var userDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
             Common.assert(!Common.PARANOIA || realtime.userInterfaceContent === userDoc);
             var fixUserDocPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
@@ -1035,7 +1191,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             fixUserDocPatch =
                 Patch.simplify(fixUserDocPatch, userDoc, realtime.config.operationSimplify);
 
-            msg.parentCount = 0;
+            msg.mut.parentCount = 0;
             realtime.rootMessage = realtime.best = msg;
 
             realtime.authDoc = msg.content.operations[0].toInsert;
@@ -1047,7 +1203,8 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
             return;
         } else {
             // we'll probably find the missing parent later.
-            debug(realtime, "Patch [" + msg.hashOf + "] not connected to root");
+            debug(realtime, "Patch [" + msg.hashOf + "] not connected to root (parent: [" +
+                msg.lastMsgHash + "])");
             if (Common.PARANOIA) { check(realtime); }
             return;
         }
@@ -1056,7 +1213,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     // of this message fills in a hole in the chain which makes another patch better, swap to the
     // best child of this patch since longest chain always wins.
     msg = getBestChild(realtime, msg);
-    msg.isFromMe = isFromMe;
+    msg.mut.isFromMe = isFromMe;
     var patch = msg.content;
 
     // Find the ancestor of this patch which is in the main chain, reverting as necessary
@@ -1096,21 +1253,31 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
     var authDocAtTimeOfPatch = realtime.authDoc;
 
-    for (var i = 0; i < toRevert.length; i++) {
-        Common.assert(typeof(toRevert[i].content.inverseOf) !== 'undefined');
-        authDocAtTimeOfPatch = Patch.apply(toRevert[i].content.inverseOf, authDocAtTimeOfPatch);
-    }
+    toRevert.forEach(function (tr) {
+        authDocAtTimeOfPatch = Patch.apply(inversePatch(tr.content), authDocAtTimeOfPatch);
+    });
 
-    // toApply.length-1 because we do not want to apply the new patch.
-    for (var i = 0; i < toApply.length-1; i++) {
-        if (typeof(toApply[i].content.inverseOf) === 'undefined') {
-            toApply[i].content.inverseOf = Patch.invert(toApply[i].content, authDocAtTimeOfPatch);
-            toApply[i].content.inverseOf.inverseOf = toApply[i].content;
-        }
-        authDocAtTimeOfPatch = Patch.apply(toApply[i].content, authDocAtTimeOfPatch);
-    }
+    toApply.forEach(function (ta, i) {
+        // toApply.length-1 because we do not want to apply the new patch.
+        if (i === toApply.length - 1) { return; }
+        mkInverse(ta.content, authDocAtTimeOfPatch);
+        authDocAtTimeOfPatch = Patch.apply(ta.content, authDocAtTimeOfPatch);
+    });
 
-    if (Sha.hex_sha256(authDocAtTimeOfPatch) !== patch.parentHash) {
+    var headAtTimeOfPatch = realtime.best;
+    if (toApply.length > 1) {
+        headAtTimeOfPatch = toApply[toApply.length-2];
+        Common.assert(headAtTimeOfPatch);
+    } else if (toRevert.length) {
+        headAtTimeOfPatch = getParent(realtime, toRevert[toRevert.length-1]);
+        Common.assert(headAtTimeOfPatch);
+    }
+    Common.assert(inversePatch(headAtTimeOfPatch.content).parentHash);
+    Common.assert(!Common.PARANOIA ||
+        inversePatch(headAtTimeOfPatch.content).parentHash ===
+            Sha.hex_sha256(authDocAtTimeOfPatch));
+
+    if (inversePatch(headAtTimeOfPatch.content).parentHash !== patch.parentHash) {
         debug(realtime, "patch [" + msg.hashOf + "] parentHash is not valid");
         if (Common.PARANOIA) { check(realtime); }
         if (Common.TESTING) { throw new Error(); }
@@ -1121,17 +1288,16 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     if (patch.isCheckpoint) {
         // Ok, we have a checkpoint patch.
         // If the chain length is not equal to checkpointInterval then this patch is invalid.
-        var i = 0;
         var checkpointP;
-        for (var m = getParent(realtime, msg); m; m = getParent(realtime, m)) {
+        forEachParent(realtime, msg, function (m) {
             if (m.content.isCheckpoint) {
                 if (checkpointP) {
                     checkpointP = m;
-                    break;
+                    return false;
                 }
                 checkpointP = m;
             }
-        }
+        });
         if (checkpointP && checkpointP !== realtime.rootMessage) {
             var point = parentCount(realtime, checkpointP);
             if (realtime.config.strictCheckpointValidation &&
@@ -1146,10 +1312,10 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
 
             // Time to prune some old messages from the chain
             debug(realtime, "checkpoint [" + msg.hashOf + "]");
-            for (var m = getParent(realtime, checkpointP); m; m = getParent(realtime, m)) {
+            forEachParent(realtime, checkpointP, function (m) {
                 debug(realtime, "pruning [" + m.hashOf + "]");
                 forgetMessage(realtime, m);
-            }
+            });
             realtime.rootMessage = checkpointP;
         }
     } else {
@@ -1171,8 +1337,7 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
         }
     }
 
-    patch.inverseOf = Patch.invert(patch, authDocAtTimeOfPatch);
-    patch.inverseOf.inverseOf = patch;
+    mkInverse(patch, authDocAtTimeOfPatch);
 
     realtime.uncommitted = Patch.simplify(
         realtime.uncommitted, realtime.authDoc, realtime.config.operationSimplify);
@@ -1184,18 +1349,20 @@ var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromM
     // Derive the patch for the user's uncommitted work
     var uncommittedPatch = Patch.invert(realtime.uncommitted, realtime.authDoc);
 
-    for (var i = 0; i < toRevert.length; i++) {
-        debug(realtime, "reverting [" + toRevert[i].hashOf + "]");
-        if (toRevert[i].isFromMe) { debug(realtime, "reverting patch 'from me' [" + JSON.stringify(toRevert[i].content.operations) + "]"); }
-        uncommittedPatch = Patch.merge(uncommittedPatch, toRevert[i].content.inverseOf);
-        revertPatch(realtime, toRevert[i].isFromMe, toRevert[i].content);
-    }
+    toRevert.forEach(function (tr) {
+        debug(realtime, "reverting [" + tr.hashOf + "]");
+        if (tr.mut.isFromMe) {
+            debug(realtime, "reverting patch 'from me' [" + JSON.stringify(tr.content.operations) + "]");
+        }
+        uncommittedPatch = Patch.merge(uncommittedPatch, inversePatch(tr.content));
+        revertPatch(realtime, tr.mut.isFromMe, tr.content);
+    });
 
-    for (var i = 0; i < toApply.length; i++) {
-        debug(realtime, "applying [" + toApply[i].hashOf + "]");
-        uncommittedPatch = Patch.merge(uncommittedPatch, toApply[i].content);
-        applyPatch(realtime, toApply[i].isFromMe, toApply[i].content);
-    }
+    toApply.forEach(function (ta) {
+        debug(realtime, "applying [" + ta.hashOf + "]");
+        uncommittedPatch = Patch.merge(uncommittedPatch, ta.content);
+        applyPatch(realtime, ta.mut.isFromMe, ta.content);
+    });
 
     uncommittedPatch = Patch.merge(uncommittedPatch, realtime.uncommitted);
     uncommittedPatch = Patch.simplify(
@@ -1224,7 +1391,7 @@ var getDepthOfState = function (content, minDepth, realtime) {
     Common.assert(typeof(content) === 'string');
 
     // minimum depth is an optional argument which defaults to zero
-    var minDepth = minDepth || 0;
+    minDepth = minDepth || 0;
 
     if (minDepth === 0 && realtime.authDoc === content) {
         return 0;
@@ -1256,23 +1423,23 @@ var getContentAtState = function (realtime, msg) {
     while (patches[0] !== realtime.rootMessage) {
         var parent = getParent(realtime, patches[0]);
         if (!parent) {
-            return { error: 'not connected to root' };
+            return { error: 'not connected to root', doc: undefined };
         }
         patches.unshift(parent);
     }
     var doc = '';
     if (realtime.rootMessage.content.operations.length) {
         Common.assert(realtime.rootMessage.content.operations.length === 1);
-        var doc = realtime.rootMessage.content.operations[0].toInsert;
+        doc = realtime.rootMessage.content.operations[0].toInsert;
     }
     for (var i = 1; i < patches.length; i++) {
         doc = Patch.apply(patches[i].content, doc);
     }
-    return { doc: doc };
+    return { error: undefined, doc: doc };
 };
 
 var wrapMessage = function (realtime, msg) {
-    var wrapped = Object.freeze({
+    return Object.freeze({
         type: 'Block',
         hashOf: msg.hashOf,
         lastMsgHash: msg.lastMsgHash,
@@ -1283,71 +1450,105 @@ var wrapMessage = function (realtime, msg) {
         },
         getContent: function () { return getContentAtState(realtime, msg); },
         getPatch: function () { return Patch.clone(msg.content); },
-        getInversePatch: function () { return Patch.clone(msg.content.inverseOf); },
+        getInversePatch: function () { return Patch.clone(inversePatch(msg.content)); },
         equals: function (block, msgOpt) {
             if (msgOpt) { return msg === msgOpt; }
             Common.assert(block.type === 'Block');
             return block.equals(null, msg);
         }
     });
-    return wrapped;
 };
 
-module.exports.create = function (conf) {
-    var realtime = ChainPad.create(conf);
+/*::
+import type { Operation_Simplify_t, Operation_Transform_t } from './Operation';
+export type ChainPad_Config_t = {
+    initialState: string,
+    checkpointInterval: number,
+    avgSyncMilliseconds: number,
+    strictCheckpointValidation: boolean,
+    operationSimplify: Operation_Simplify_t,
+    logLevel: number,
+    transformFunction: Operation_Transform_t,
+    userName: string,
+    validateContent: (string)=>boolean
+};
+*/
+
+var mkConfig = function (config) {
+    config = config || {};
+    return Object.freeze({
+        initialState: config.initialState || '',
+        checkpointInterval: config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL,
+        avgSyncMilliseconds: config.avgSyncMilliseconds || DEFAULT_AVERAGE_SYNC_MILLISECONDS,
+        strictCheckpointValidation: config.strictCheckpointValidation ||
+            DEFAULT_STRICT_CHECKPOINT_VALIDATION,
+        operationSimplify: config.operationSimplify || Operation.simplify,
+        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        transformFunction: config.transformFunction || Operation.transform0,
+        userName: config.userName || 'anonymous',
+        validateContent: config.validateContent || function () { return true; }
+    });
+};
+
+module.exports.create = function (conf /*:Object*/) {
+    var realtime = ChainPad.create(mkConfig(conf));
     var out = {
-        onPatch: enterChainPad(realtime, function (handler) {
+        onPatch: function (handler /*:(Patch_t)=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.patchHandlers.push(handler);
-        }),
-        patch: enterChainPad(realtime, function (patch, x, y) {
+        },
+        patch: function (patch /*:Patch_t|number*/, x /*:?number*/, y /*:?string*/) {
             if (typeof(patch) === 'number') {
                 // Actually they meant to call realtime.change()
+                if (!x || !y) { throw new Error(); }
                 out.change(patch, x, y);
                 return;
             }
             doPatch(realtime, patch);
-        }),
+        },
 
-        onChange: enterChainPad(realtime, function (handler) {
+        onChange: function (handler /*:(number, number, string)=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.changeHandlers.push(handler);
-        }),
-        change: enterChainPad(realtime, function (offset, count, chars) {
+        },
+
+        change: function (offset /*:number*/, count /*:number*/, chars /*:string*/) {
             if (count === 0 && chars === '') { return; }
             doOperation(realtime, Operation.create(offset, count, chars));
-        }),
+        },
 
-        onMessage: enterChainPad(realtime, function (handler) {
+        onMessage: function (handler /*:(string, ()=>void)=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.messageHandlers.push(handler);
-        }),
+        },
 
-        message: enterChainPad(realtime, function (message) {
+        message: function (message /*:string*/) {
             handleMessage(realtime, message, false);
-        }),
+        },
 
-        start: enterChainPad(realtime, function () {
+        start: function () {
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
-        }),
+        },
 
-        abort: enterChainPad(realtime, function () {
+        abort: function () {
             realtime.aborted = true;
-            realtime.schedules.forEach(function (s) { clearTimeout(s) });
-        }),
+            realtime.schedules.forEach(function (s) { clearTimeout(s); });
+        },
 
-        sync: enterChainPad(realtime, function () { sync(realtime); }),
+        sync: function () {
+            sync(realtime);
+        },
 
         getAuthDoc: function () { return realtime.authDoc; },
 
         getUserDoc: function () { return Patch.apply(realtime.uncommitted, realtime.authDoc); },
 
-        getDepthOfState: function (content, minDepth) {
+        getDepthOfState: function (content /*:string*/, minDepth /*:?number*/) {
             return getDepthOfState(content, minDepth, realtime);
         },
 
-        onSettle: function (handler) {
+        onSettle: function (handler /*:()=>void*/) {
             Common.assert(typeof(handler) === 'function');
             realtime.onSettle.push(handler);
         },
@@ -1356,11 +1557,13 @@ module.exports.create = function (conf) {
             return wrapMessage(realtime, realtime.best);
         },
 
-        getBlockForHash: function (hash) {
+        getBlockForHash: function (hash /*:string*/) {
             Common.assert(typeof(hash) === 'string');
             var msg = realtime.messages[hash];
             if (msg) { return wrapMessage(realtime, msg); }
-        }
+        },
+
+        _: undefined
     };
     if (Common.DEBUG) {
         out._ = realtime;
@@ -1370,6 +1573,7 @@ module.exports.create = function (conf) {
 
 },
 "Operation.js": function(module, exports, require){
+/*@flow*/
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -1386,20 +1590,38 @@ module.exports.create = function (conf) {
  * You should have received a copy of the GNU Affero General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
+"use strict";
 var Common = require('./Common');
 
 var Operation = module.exports;
 
-var check = Operation.check = function (op, docLength_opt) {
+/*::
+export type Operation_t = {
+    type: 'Operation',
+    offset: number,
+    toRemove: number,
+    toInsert: string
+};
+export type Operation_Packed_t = [number, number, string];
+export type Operation_Simplify_t = (Operation_t, string, typeof(Operation.simplify))=>?Operation_t;
+export type Operation_Transform_t = (string, Operation_t, Operation_t)=>?Operation_t;
+*/
+
+var check = Operation.check = function (op /*:any*/, docLength_opt /*:?number*/) /*:Operation_t*/ {
     Common.assert(op.type === 'Operation');
-    Common.assert(Common.isUint(op.offset));
-    Common.assert(Common.isUint(op.toRemove));
-    Common.assert(typeof(op.toInsert) === 'string');
-    Common.assert(op.toRemove > 0 || op.toInsert.length > 0);
+    if (!Common.isUint(op.offset)) { throw new Error(); }
+    if (!Common.isUint(op.toRemove)) { throw new Error(); }
+    if (typeof(op.toInsert) !== 'string') { throw new Error(); }
+    if (op.toRemove < 1 && op.toInsert.length < 1) { throw new Error(); }
     Common.assert(typeof(docLength_opt) !== 'number' || op.offset + op.toRemove <= docLength_opt);
+    return op;
 };
 
-var create = Operation.create = function (offset, toRemove, toInsert) {
+var create = Operation.create = function (
+    offset /*:?number*/,
+    toRemove /*:?number*/,
+    toInsert /*:?string*/)
+{
     var out = {
         type: 'Operation',
         offset: offset || 0,
@@ -1407,83 +1629,79 @@ var create = Operation.create = function (offset, toRemove, toInsert) {
         toInsert: toInsert || '',
     };
     if (Common.PARANOIA) { check(out); }
-    return out;
+    return Object.freeze(out);
 };
 
-var toObj = Operation.toObj = function (op) {
+var toObj = Operation.toObj = function (op /*:Operation_t*/) {
     if (Common.PARANOIA) { check(op); }
     return [op.offset,op.toRemove,op.toInsert];
 };
 
-var fromObj = Operation.fromObj = function (obj) {
+ // Allow any as input because we assert its type internally..
+var fromObj = Operation.fromObj = function (obj /*:any*/) {
     Common.assert(Array.isArray(obj) && obj.length === 3);
     return create(obj[0], obj[1], obj[2]);
-};
-
-var clone = Operation.clone = function (op) {
-    return create(op.offset, op.toRemove, op.toInsert);
 };
 
 /**
  * @param op the operation to apply.
  * @param doc the content to apply the operation on
  */
-var apply = Operation.apply = function (op, doc)
+var apply = Operation.apply = function (op /*:Operation_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
-        check(op);
         Common.assert(typeof(doc) === 'string');
-        Common.assert(op.offset + op.toRemove <= doc.length);
+        check(op, doc.length);
     }
     return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
-var invert = Operation.invert = function (op, doc) {
+var invert = Operation.invert = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
         Common.assert(op.offset + op.toRemove <= doc.length);
     }
-    var rop = clone(op);
-    rop.toInsert = doc.substring(op.offset, op.offset + op.toRemove);
-    rop.toRemove = op.toInsert.length;
-    return rop;
+    return create(
+        op.offset,
+        op.toInsert.length,
+        doc.substring(op.offset, op.offset + op.toRemove)
+    );
 };
 
-var simplify = Operation.simplify = function (op, doc) {
+var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
         Common.assert(op.offset + op.toRemove <= doc.length);
     }
     var rop = invert(op, doc);
-    op = clone(op);
 
     var minLen = Math.min(op.toInsert.length, rop.toInsert.length);
     var i;
     for (i = 0; i < minLen && rop.toInsert[i] === op.toInsert[i]; i++) ;
-    op.offset += i;
-    op.toRemove -= i;
-    op.toInsert = op.toInsert.substring(i);
-    rop.toInsert = rop.toInsert.substring(i);
+    var opOffset = op.offset + i;
+    var opToRemove = op.toRemove - i;
+    var opToInsert = op.toInsert.substring(i);
+    var ropToInsert = rop.toInsert.substring(i);
 
-    if (rop.toInsert.length === op.toInsert.length) {
-        for (i = rop.toInsert.length-1; i >= 0 && rop.toInsert[i] === op.toInsert[i]; i--) ;
-        op.toInsert = op.toInsert.substring(0, i+1);
-        op.toRemove = i+1;
+    if (ropToInsert.length === opToInsert.length) {
+        for (i = ropToInsert.length-1; i >= 0 && ropToInsert[i] === opToInsert[i]; i--) ;
+        opToInsert = opToInsert.substring(0, i+1);
+        opToRemove = i+1;
     }
 
-    if (op.toRemove === 0 && op.toInsert.length === 0) { return null; }
-    return op;
+    if (opToRemove === 0 && opToInsert.length === 0) { return null; }
+    return create(opOffset, opToRemove, opToInsert);
 };
 
-var equals = Operation.equals = function (opA, opB) {
+var equals = Operation.equals = function (opA /*:Operation_t*/, opB /*:Operation_t*/) {
     return (opA.toRemove === opB.toRemove
         && opA.toInsert === opB.toInsert
         && opA.offset === opB.offset);
 };
 
-var lengthChange = Operation.lengthChange = function (op)
+var lengthChange = Operation.lengthChange = function (op /*:Operation_t*/)
 {
     if (Common.PARANOIA) { check(op); }
     return op.toInsert.length - op.toRemove;
@@ -1492,60 +1710,64 @@ var lengthChange = Operation.lengthChange = function (op)
 /*
  * @return the merged operation OR null if the result of the merger is a noop.
  */
-var merge = Operation.merge = function (oldOpOrig, newOpOrig) {
+var merge = Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(newOpOrig);
         check(oldOpOrig);
     }
 
-    var newOp = clone(newOpOrig);
-    var oldOp = clone(oldOpOrig);
-    var offsetDiff = newOp.offset - oldOp.offset;
+    var oldOp_offset = oldOpOrig.offset;
+    var oldOp_toRemove = oldOpOrig.toRemove;
+    var oldOp_toInsert = oldOpOrig.toInsert;
 
-    if (newOp.toRemove > 0) {
-        var origOldInsert = oldOp.toInsert;
-        oldOp.toInsert = (
-             oldOp.toInsert.substring(0,offsetDiff)
-           + oldOp.toInsert.substring(offsetDiff + newOp.toRemove)
+    var newOp_offset = newOpOrig.offset;
+    var newOp_toRemove = newOpOrig.toRemove;
+    var newOp_toInsert = newOpOrig.toInsert;
+
+    var offsetDiff = newOp_offset - oldOp_offset;
+
+    if (newOp_toRemove > 0) {
+        var origOldInsert = oldOp_toInsert;
+        oldOp_toInsert = (
+             oldOp_toInsert.substring(0,offsetDiff)
+           + oldOp_toInsert.substring(offsetDiff + newOp_toRemove)
         );
-        newOp.toRemove -= (origOldInsert.length - oldOp.toInsert.length);
-        if (newOp.toRemove < 0) { newOp.toRemove = 0; }
+        newOp_toRemove -= (origOldInsert.length - oldOp_toInsert.length);
+        if (newOp_toRemove < 0) { newOp_toRemove = 0; }
 
-        oldOp.toRemove += newOp.toRemove;
-        newOp.toRemove = 0;
+        oldOp_toRemove += newOp_toRemove;
+        newOp_toRemove = 0;
     }
 
     if (offsetDiff < 0) {
-        oldOp.offset += offsetDiff;
-        oldOp.toInsert = newOp.toInsert + oldOp.toInsert;
+        oldOp_offset += offsetDiff;
+        oldOp_toInsert = newOp_toInsert + oldOp_toInsert;
 
-    } else if (oldOp.toInsert.length === offsetDiff) {
-        oldOp.toInsert = oldOp.toInsert + newOp.toInsert;
+    } else if (oldOp_toInsert.length === offsetDiff) {
+        oldOp_toInsert = oldOp_toInsert + newOp_toInsert;
 
-    } else if (oldOp.toInsert.length > offsetDiff) {
-        oldOp.toInsert = (
-            oldOp.toInsert.substring(0,offsetDiff)
-          + newOp.toInsert
-          + oldOp.toInsert.substring(offsetDiff)
+    } else if (oldOp_toInsert.length > offsetDiff) {
+        oldOp_toInsert = (
+            oldOp_toInsert.substring(0,offsetDiff)
+          + newOp_toInsert
+          + oldOp_toInsert.substring(offsetDiff)
         );
     } else {
         throw new Error("should never happen\n" +
                         JSON.stringify([oldOpOrig,newOpOrig], null, '  '));
     }
 
-    if (oldOp.toInsert === '' && oldOp.toRemove === 0) {
-        return null;
-    }
-    if (Common.PARANOIA) { check(oldOp); }
+    if (oldOp_toInsert === '' && oldOp_toRemove === 0) { return null; }
 
-    return oldOp;
+    return create(oldOp_offset, oldOp_toRemove, oldOp_toInsert);
 };
 
 /**
  * If the new operation deletes what the old op inserted or inserts content in the middle of
  * the old op's content or if they abbut one another, they should be merged.
  */
-var shouldMerge = Operation.shouldMerge = function (oldOp, newOp) {
+var shouldMerge = Operation.shouldMerge = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/)
+{
     if (Common.PARANOIA) {
         check(oldOp);
         check(newOp);
@@ -1566,16 +1788,17 @@ var shouldMerge = Operation.shouldMerge = function (oldOp, newOp) {
  *                the rebased clone of newOp if it needs rebasing, or
  *                null if newOp and oldOp must be merged.
  */
-var rebase = Operation.rebase = function (oldOp, newOp) {
+var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(oldOp);
         check(newOp);
     }
     if (newOp.offset < oldOp.offset) { return newOp; }
-    newOp = clone(newOp);
-    newOp.offset += oldOp.toRemove;
-    newOp.offset -= oldOp.toInsert.length;
-    return newOp;
+    return create(
+        newOp.offset + oldOp.toRemove - oldOp.toInsert.length,
+        newOp.toRemove,
+        newOp.toInsert
+    );
 };
 
 /**
@@ -1583,42 +1806,40 @@ var rebase = Operation.rebase = function (oldOp, newOp) {
  * has to be lossy because both operations have the same base and they diverge.
  * This could be made nicer and/or tailored to a specific data type.
  *
- * @param toTransform the operation which is converted *MUTATED*.
+ * @param toTransform the operation which is converted
  * @param transformBy an existing operation which also has the same base.
  * @return toTransform *or* null if the result is a no-op.
  */
-
-var transform0 = Operation.transform0 = function (text, toTransformOrig, transformByOrig) {
-    // Cloning the original transformations makes this algorithm such that it
-    // **DOES NOT MUTATE ANYMORE**
-    var toTransform = Operation.clone(toTransformOrig);
-    var transformBy = Operation.clone(transformByOrig);
-
+var transform0 = Operation.transform0 = function (
+    text /*:string*/,
+    toTransform /*:Operation_t*/,
+    transformBy /*:Operation_t*/)
+{
     if (toTransform.offset > transformBy.offset) {
         if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
             // simple rebase
-            toTransform.offset -= transformBy.toRemove;
-            toTransform.offset += transformBy.toInsert.length;
-            return toTransform;
+            return create(
+                toTransform.offset - transformBy.toRemove + transformBy.toInsert.length,
+                toTransform.toRemove,
+                toTransform.toInsert
+            );
         }
-        // goto the end, anything you deleted that they also deleted should be skipped.
-        var newOffset = transformBy.offset + transformBy.toInsert.length;
-        toTransform.toRemove = 0; //-= (newOffset - toTransform.offset);
-        if (toTransform.toRemove < 0) { toTransform.toRemove = 0; }
-        toTransform.offset = newOffset;
-        if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
-            return null;
-        }
-        return toTransform;
+        var newToRemove =
+            toTransform.toRemove - (transformBy.offset + transformBy.toRemove - toTransform.offset);
+        if (newToRemove < 0) { newToRemove = 0; }
+        if (newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
+        return create(
+            transformBy.offset + transformBy.toInsert.length,
+            newToRemove,
+            toTransform.toInsert
+        );
     }
-    if (toTransform.offset + toTransform.toRemove < transformBy.offset) {
-        return toTransform;
-    }
-    toTransform.toRemove = transformBy.offset - toTransform.offset;
-    if (toTransform.toInsert.length === 0 && toTransform.toRemove === 0) {
-        return null;
-    }
-    return toTransform;
+    // they don't touch, yay
+    if (toTransform.offset + toTransform.toRemove < transformBy.offset) { return toTransform; }
+    // Truncate what will be deleted...
+    var _newToRemove = transformBy.offset - toTransform.offset;
+    if (_newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
+    return create(toTransform.offset, _newToRemove, toTransform.toInsert);
 };
 
 /**
@@ -1626,29 +1847,1177 @@ var transform0 = Operation.transform0 = function (text, toTransformOrig, transfo
  * @param transformBy an existing operation which also has the same base.
  * @return a modified clone of toTransform *or* toTransform itself if no change was made.
  */
-var transform = Operation.transform = function (text, toTransform, transformBy, transformFunction) {
+var transform = Operation.transform = function (
+    text /*:string*/,
+    toTransform /*:Operation_t*/,
+    transformBy /*:Operation_t*/,
+    transformFunction /*:Operation_Transform_t*/)
+{
     if (Common.PARANOIA) {
         check(toTransform);
         check(transformBy);
     }
-    transformFunction = transformFunction || transform0;
-    toTransform = clone(toTransform);
     var result = transformFunction(text, toTransform, transformBy);
     if (Common.PARANOIA && result) { check(result); }
     return result;
 };
 
 /** Used for testing. */
-var random = Operation.random = function (docLength) {
+var random = Operation.random = function (docLength /*:number*/) {
     Common.assert(Common.isUint(docLength));
     var offset = Math.floor(Math.random() * 100000000 % docLength) || 0;
     var toRemove = Math.floor(Math.random() * 100000000 % (docLength - offset)) || 0;
     var toInsert = '';
     do {
-        var toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
+        toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
 };
+
+},
+"sha256/hash.js": function(module, exports, require){
+var Utils = require('./utils.js');
+
+function hash_reset () {
+    this.result = null;
+    this.pos = 0;
+    this.len = 0;
+
+    this.asm.reset();
+
+    return this;
+}
+
+function hash_process ( data ) {
+    if ( this.result !== null )
+        throw new IllegalStateError("state must be reset before processing new data");
+
+    if ( Utils.is_string(data) )
+        data = Utils.string_to_bytes(data);
+
+    if ( Utils.is_buffer(data) )
+        data = new Uint8Array(data);
+
+    if ( !Utils.is_bytes(data) )
+        throw new TypeError("data isn't of expected type");
+
+    var asm = this.asm,
+        heap = this.heap,
+        hpos = this.pos,
+        hlen = this.len,
+        dpos = 0,
+        dlen = data.length,
+        wlen = 0;
+
+    while ( dlen > 0 ) {
+        wlen = Utils._heap_write( heap, hpos+hlen, data, dpos, dlen );
+        hlen += wlen;
+        dpos += wlen;
+        dlen -= wlen;
+
+        wlen = asm.process( hpos, hlen );
+
+        hpos += wlen;
+        hlen -= wlen;
+
+        if ( !hlen ) hpos = 0;
+    }
+
+    this.pos = hpos;
+    this.len = hlen;
+
+    return this;
+}
+
+function hash_finish () {
+    if ( this.result !== null )
+        throw new IllegalStateError("state must be reset before processing new data");
+
+    this.asm.finish( this.pos, this.len, 0 );
+
+    this.result = new Uint8Array(this.HASH_SIZE);
+    this.result.set( this.heap.subarray( 0, this.HASH_SIZE ) );
+
+    this.pos = 0;
+    this.len = 0;
+
+    return this;
+}
+
+module.exports.hash_reset = hash_reset;
+module.exports.hash_process = hash_process;
+module.exports.hash_finish = hash_finish;
+
+},
+"sha256/utils.js": function(module, exports, require){
+//var FloatArray = global.Float64Array || global.Float32Array; // make PhantomJS happy
+
+var string_to_bytes = module.exports.string_to_bytes = function( str, utf8 ) {
+    utf8 = !!utf8;
+
+    var len = str.length,
+        bytes = new Uint8Array( utf8 ? 4*len : len );
+
+    for ( var i = 0, j = 0; i < len; i++ ) {
+        var c = str.charCodeAt(i);
+
+        if ( utf8 && 0xd800 <= c && c <= 0xdbff ) {
+            if ( ++i >= len ) throw new Error( "Malformed string, low surrogate expected at position " + i );
+            c = ( (c ^ 0xd800) << 10 ) | 0x10000 | ( str.charCodeAt(i) ^ 0xdc00 );
+        }
+        else if ( !utf8 && c >>> 8 ) {
+            throw new Error("Wide characters are not allowed.");
+        }
+
+        if ( !utf8 || c <= 0x7f ) {
+            bytes[j++] = c;
+        }
+        else if ( c <= 0x7ff ) {
+            bytes[j++] = 0xc0 | (c >> 6);
+            bytes[j++] = 0x80 | (c & 0x3f);
+        }
+        else if ( c <= 0xffff ) {
+            bytes[j++] = 0xe0 | (c >> 12);
+            bytes[j++] = 0x80 | (c >> 6 & 0x3f);
+            bytes[j++] = 0x80 | (c & 0x3f);
+        }
+        else {
+            bytes[j++] = 0xf0 | (c >> 18);
+            bytes[j++] = 0x80 | (c >> 12 & 0x3f);
+            bytes[j++] = 0x80 | (c >> 6 & 0x3f);
+            bytes[j++] = 0x80 | (c & 0x3f);
+        }
+    }
+
+    return bytes.subarray(0, j);
+};
+
+var hex_to_bytes = module.exports.hex_to_bytes = function( str ) {
+    var len = str.length;
+    if ( len & 1 ) {
+        str = '0'+str;
+        len++;
+    }
+    var bytes = new Uint8Array(len>>1);
+    for ( var i = 0; i < len; i += 2 ) {
+        bytes[i>>1] = parseInt( str.substr( i, 2), 16 );
+    }
+    return bytes;
+};
+
+var base64_to_bytes = module.exports.base64_to_bytes = function( str ) {
+    return string_to_bytes( atob( str ) );
+};
+
+var bytes_to_string = module.exports.bytes_to_string = function( bytes, utf8 ) {
+    utf8 = !!utf8;
+
+    var len = bytes.length,
+        chars = new Array(len);
+
+    for ( var i = 0, j = 0; i < len; i++ ) {
+        var b = bytes[i];
+        if ( !utf8 || b < 128 ) {
+            chars[j++] = b;
+        }
+        else if ( b >= 192 && b < 224 && i+1 < len ) {
+            chars[j++] = ( (b & 0x1f) << 6 ) | (bytes[++i] & 0x3f);
+        }
+        else if ( b >= 224 && b < 240 && i+2 < len ) {
+            chars[j++] = ( (b & 0xf) << 12 ) | ( (bytes[++i] & 0x3f) << 6 ) | (bytes[++i] & 0x3f);
+        }
+        else if ( b >= 240 && b < 248 && i+3 < len ) {
+            var c = ( (b & 7) << 18 ) | ( (bytes[++i] & 0x3f) << 12 ) | ( (bytes[++i] & 0x3f) << 6 ) | (bytes[++i] & 0x3f);
+            if ( c <= 0xffff ) {
+                chars[j++] = c;
+            }
+            else {
+                c ^= 0x10000;
+                chars[j++] = 0xd800 | (c >> 10);
+                chars[j++] = 0xdc00 | (c & 0x3ff);
+            }
+        }
+        else {
+            throw new Error("Malformed UTF8 character at byte offset " + i);
+        }
+    }
+
+    var str = '',
+        bs = 16384;
+    for ( var _i = 0; _i < j; _i += bs ) {
+        str += String.fromCharCode.apply( String, chars.slice( _i, _i+bs <= j ? _i+bs : j ) );
+    }
+
+    return str;
+};
+
+var bytes_to_hex = module.exports.bytes_to_hex = function( arr ) {
+    var str = '';
+    for ( var i = 0; i < arr.length; i++ ) {
+        var h = ( arr[i] & 0xff ).toString(16);
+        if ( h.length < 2 ) str += '0';
+        str += h;
+    }
+    return str;
+};
+
+var bytes_to_base64 = module.exports.bytes_to_base64 = function( arr ) {
+    return btoa( bytes_to_string(arr) );
+};
+
+var pow2_ceil = module.exports.pow2_ceil = function( a ) {
+    a -= 1;
+    a |= a >>> 1;
+    a |= a >>> 2;
+    a |= a >>> 4;
+    a |= a >>> 8;
+    a |= a >>> 16;
+    a += 1;
+    return a;
+};
+
+var is_number = module.exports.is_number = function( a ) {
+    return ( typeof a === 'number' );
+};
+
+var is_string = module.exports.is_string = function( a ) {
+    return ( typeof a === 'string' );
+};
+
+var is_buffer = module.exports.is_buffer = function( a ) {
+    return ( a instanceof ArrayBuffer );
+};
+
+var is_bytes = module.exports.is_bytes = function( a ) {
+    return ( a instanceof Uint8Array );
+};
+
+var is_typed_array = module.exports.is_typed_array = function( a ) {
+    return ( a instanceof Int8Array ) || ( a instanceof Uint8Array )
+        || ( a instanceof Int16Array ) || ( a instanceof Uint16Array )
+        || ( a instanceof Int32Array ) || ( a instanceof Uint32Array )
+        || ( a instanceof Float32Array )
+        || ( a instanceof Float64Array );
+};
+
+var _heap_init = module.exports._heap_init = function( constructor, options ) {
+    var heap = options.heap,
+        size = heap ? heap.byteLength : options.heapSize || 65536;
+
+    if ( size & 0xfff || size <= 0 )
+        throw new Error("heap size must be a positive integer and a multiple of 4096");
+
+    heap = heap || new constructor( new ArrayBuffer(size) );
+
+    return heap;
+};
+
+var _heap_write = module.exports._heap_write = function( heap, hpos, data, dpos, dlen ) {
+    var hlen = heap.length - hpos,
+        wlen = ( hlen < dlen ) ? hlen : dlen;
+
+    heap.set( data.subarray( dpos, dpos+wlen ), hpos );
+
+    return wlen;
+};
+
+},
+"sha256/sha256.js": function(module, exports, require){
+var Utils = require('./utils.js');
+var Hash = require('./hash.js');
+var Asm = require('./sha256.asm.js');
+
+var _sha256_block_size = 64,
+    _sha256_hash_size = 32;
+
+function sha256_constructor ( options ) {
+    options = options || {};
+
+    this.heap = Utils._heap_init( Uint8Array, options );
+    this.asm = options.asm || Asm.sha256_asm( { Uint8Array: Uint8Array }, null, this.heap.buffer );
+
+    this.BLOCK_SIZE = _sha256_block_size;
+    this.HASH_SIZE = _sha256_hash_size;
+
+    this.reset();
+}
+
+sha256_constructor.BLOCK_SIZE = _sha256_block_size;
+sha256_constructor.HASH_SIZE = _sha256_hash_size;
+var sha256_prototype = sha256_constructor.prototype;
+sha256_prototype.reset =   Hash.hash_reset;
+sha256_prototype.process = Hash.hash_process;
+sha256_prototype.finish =  Hash.hash_finish;
+
+var sha256_instance = null;
+
+function get_sha256_instance () {
+    if ( sha256_instance === null ) sha256_instance = new sha256_constructor( { heapSize: 0x100000 } );
+    return sha256_instance;
+}
+
+module.exports.get_sha256_instance = get_sha256_instance;
+module.exports.sha256_constructor = sha256_constructor;
+
+},
+"sha256/exports.js": function(module, exports, require){
+var Sha256 = require('./sha256.js');
+var Utils = require('./utils.js');
+
+/**
+ * SHA256 exports
+ */
+
+function sha256_bytes ( data ) {
+    if ( data === undefined ) throw new SyntaxError("data required");
+    return Sha256.get_sha256_instance().reset().process(data).finish().result;
+}
+
+function sha256_hex ( data ) {
+    var result = sha256_bytes(data);
+    return Utils.bytes_to_hex(result);
+}
+
+function sha256_base64 ( data ) {
+    var result = sha256_bytes(data);
+    return Utils.bytes_to_base64(result);
+}
+
+Sha256.sha256_constructor.bytes = sha256_bytes;
+Sha256.sha256_constructor.hex = sha256_hex;
+Sha256.sha256_constructor.base64 = sha256_base64;
+
+//exports.SHA256 = sha256_constructor;
+module.exports = Sha256.sha256_constructor;
+
+},
+"sha256/sha256.asm.js": function(module, exports, require){
+module.exports.sha256_asm = function sha256_asm ( stdlib, foreign, buffer ) {
+    "use asm";
+
+    // SHA256 state
+    var H0 = 0, H1 = 0, H2 = 0, H3 = 0, H4 = 0, H5 = 0, H6 = 0, H7 = 0,
+        TOTAL0 = 0, TOTAL1 = 0;
+
+    // HMAC state
+    var I0 = 0, I1 = 0, I2 = 0, I3 = 0, I4 = 0, I5 = 0, I6 = 0, I7 = 0,
+        O0 = 0, O1 = 0, O2 = 0, O3 = 0, O4 = 0, O5 = 0, O6 = 0, O7 = 0;
+
+    // I/O buffer
+    var HEAP = new stdlib.Uint8Array(buffer);
+
+    function _core ( w0, w1, w2, w3, w4, w5, w6, w7, w8, w9, w10, w11, w12, w13, w14, w15 ) {
+        w0 = w0|0;
+        w1 = w1|0;
+        w2 = w2|0;
+        w3 = w3|0;
+        w4 = w4|0;
+        w5 = w5|0;
+        w6 = w6|0;
+        w7 = w7|0;
+        w8 = w8|0;
+        w9 = w9|0;
+        w10 = w10|0;
+        w11 = w11|0;
+        w12 = w12|0;
+        w13 = w13|0;
+        w14 = w14|0;
+        w15 = w15|0;
+
+        var a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, g = 0, h = 0,
+            t = 0;
+
+        a = H0;
+        b = H1;
+        c = H2;
+        d = H3;
+        e = H4;
+        f = H5;
+        g = H6;
+        h = H7;
+
+        // 0
+        t = ( w0 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x428a2f98 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 1
+        t = ( w1 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x71374491 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 2
+        t = ( w2 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xb5c0fbcf )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 3
+        t = ( w3 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xe9b5dba5 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 4
+        t = ( w4 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x3956c25b )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 5
+        t = ( w5 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x59f111f1 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 6
+        t = ( w6 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x923f82a4 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 7
+        t = ( w7 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xab1c5ed5 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 8
+        t = ( w8 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xd807aa98 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 9
+        t = ( w9 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x12835b01 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 10
+        t = ( w10 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x243185be )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 11
+        t = ( w11 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x550c7dc3 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 12
+        t = ( w12 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x72be5d74 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 13
+        t = ( w13 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x80deb1fe )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 14
+        t = ( w14 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x9bdc06a7 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 15
+        t = ( w15 + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xc19bf174 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 16
+        w0 = t = ( ( w1>>>7  ^ w1>>>18 ^ w1>>>3  ^ w1<<25 ^ w1<<14 ) + ( w14>>>17 ^ w14>>>19 ^ w14>>>10 ^ w14<<15 ^ w14<<13 ) + w0 + w9 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xe49b69c1 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 17
+        w1 = t = ( ( w2>>>7  ^ w2>>>18 ^ w2>>>3  ^ w2<<25 ^ w2<<14 ) + ( w15>>>17 ^ w15>>>19 ^ w15>>>10 ^ w15<<15 ^ w15<<13 ) + w1 + w10 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xefbe4786 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 18
+        w2 = t = ( ( w3>>>7  ^ w3>>>18 ^ w3>>>3  ^ w3<<25 ^ w3<<14 ) + ( w0>>>17 ^ w0>>>19 ^ w0>>>10 ^ w0<<15 ^ w0<<13 ) + w2 + w11 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x0fc19dc6 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 19
+        w3 = t = ( ( w4>>>7  ^ w4>>>18 ^ w4>>>3  ^ w4<<25 ^ w4<<14 ) + ( w1>>>17 ^ w1>>>19 ^ w1>>>10 ^ w1<<15 ^ w1<<13 ) + w3 + w12 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x240ca1cc )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 20
+        w4 = t = ( ( w5>>>7  ^ w5>>>18 ^ w5>>>3  ^ w5<<25 ^ w5<<14 ) + ( w2>>>17 ^ w2>>>19 ^ w2>>>10 ^ w2<<15 ^ w2<<13 ) + w4 + w13 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x2de92c6f )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 21
+        w5 = t = ( ( w6>>>7  ^ w6>>>18 ^ w6>>>3  ^ w6<<25 ^ w6<<14 ) + ( w3>>>17 ^ w3>>>19 ^ w3>>>10 ^ w3<<15 ^ w3<<13 ) + w5 + w14 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x4a7484aa )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 22
+        w6 = t = ( ( w7>>>7  ^ w7>>>18 ^ w7>>>3  ^ w7<<25 ^ w7<<14 ) + ( w4>>>17 ^ w4>>>19 ^ w4>>>10 ^ w4<<15 ^ w4<<13 ) + w6 + w15 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x5cb0a9dc )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 23
+        w7 = t = ( ( w8>>>7  ^ w8>>>18 ^ w8>>>3  ^ w8<<25 ^ w8<<14 ) + ( w5>>>17 ^ w5>>>19 ^ w5>>>10 ^ w5<<15 ^ w5<<13 ) + w7 + w0 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x76f988da )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 24
+        w8 = t = ( ( w9>>>7  ^ w9>>>18 ^ w9>>>3  ^ w9<<25 ^ w9<<14 ) + ( w6>>>17 ^ w6>>>19 ^ w6>>>10 ^ w6<<15 ^ w6<<13 ) + w8 + w1 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x983e5152 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 25
+        w9 = t = ( ( w10>>>7  ^ w10>>>18 ^ w10>>>3  ^ w10<<25 ^ w10<<14 ) + ( w7>>>17 ^ w7>>>19 ^ w7>>>10 ^ w7<<15 ^ w7<<13 ) + w9 + w2 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xa831c66d )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 26
+        w10 = t = ( ( w11>>>7  ^ w11>>>18 ^ w11>>>3  ^ w11<<25 ^ w11<<14 ) + ( w8>>>17 ^ w8>>>19 ^ w8>>>10 ^ w8<<15 ^ w8<<13 ) + w10 + w3 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xb00327c8 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 27
+        w11 = t = ( ( w12>>>7  ^ w12>>>18 ^ w12>>>3  ^ w12<<25 ^ w12<<14 ) + ( w9>>>17 ^ w9>>>19 ^ w9>>>10 ^ w9<<15 ^ w9<<13 ) + w11 + w4 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xbf597fc7 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 28
+        w12 = t = ( ( w13>>>7  ^ w13>>>18 ^ w13>>>3  ^ w13<<25 ^ w13<<14 ) + ( w10>>>17 ^ w10>>>19 ^ w10>>>10 ^ w10<<15 ^ w10<<13 ) + w12 + w5 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xc6e00bf3 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 29
+        w13 = t = ( ( w14>>>7  ^ w14>>>18 ^ w14>>>3  ^ w14<<25 ^ w14<<14 ) + ( w11>>>17 ^ w11>>>19 ^ w11>>>10 ^ w11<<15 ^ w11<<13 ) + w13 + w6 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xd5a79147 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 30
+        w14 = t = ( ( w15>>>7  ^ w15>>>18 ^ w15>>>3  ^ w15<<25 ^ w15<<14 ) + ( w12>>>17 ^ w12>>>19 ^ w12>>>10 ^ w12<<15 ^ w12<<13 ) + w14 + w7 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x06ca6351 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 31
+        w15 = t = ( ( w0>>>7  ^ w0>>>18 ^ w0>>>3  ^ w0<<25 ^ w0<<14 ) + ( w13>>>17 ^ w13>>>19 ^ w13>>>10 ^ w13<<15 ^ w13<<13 ) + w15 + w8 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x14292967 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 32
+        w0 = t = ( ( w1>>>7  ^ w1>>>18 ^ w1>>>3  ^ w1<<25 ^ w1<<14 ) + ( w14>>>17 ^ w14>>>19 ^ w14>>>10 ^ w14<<15 ^ w14<<13 ) + w0 + w9 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x27b70a85 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 33
+        w1 = t = ( ( w2>>>7  ^ w2>>>18 ^ w2>>>3  ^ w2<<25 ^ w2<<14 ) + ( w15>>>17 ^ w15>>>19 ^ w15>>>10 ^ w15<<15 ^ w15<<13 ) + w1 + w10 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x2e1b2138 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 34
+        w2 = t = ( ( w3>>>7  ^ w3>>>18 ^ w3>>>3  ^ w3<<25 ^ w3<<14 ) + ( w0>>>17 ^ w0>>>19 ^ w0>>>10 ^ w0<<15 ^ w0<<13 ) + w2 + w11 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x4d2c6dfc )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 35
+        w3 = t = ( ( w4>>>7  ^ w4>>>18 ^ w4>>>3  ^ w4<<25 ^ w4<<14 ) + ( w1>>>17 ^ w1>>>19 ^ w1>>>10 ^ w1<<15 ^ w1<<13 ) + w3 + w12 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x53380d13 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 36
+        w4 = t = ( ( w5>>>7  ^ w5>>>18 ^ w5>>>3  ^ w5<<25 ^ w5<<14 ) + ( w2>>>17 ^ w2>>>19 ^ w2>>>10 ^ w2<<15 ^ w2<<13 ) + w4 + w13 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x650a7354 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 37
+        w5 = t = ( ( w6>>>7  ^ w6>>>18 ^ w6>>>3  ^ w6<<25 ^ w6<<14 ) + ( w3>>>17 ^ w3>>>19 ^ w3>>>10 ^ w3<<15 ^ w3<<13 ) + w5 + w14 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x766a0abb )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 38
+        w6 = t = ( ( w7>>>7  ^ w7>>>18 ^ w7>>>3  ^ w7<<25 ^ w7<<14 ) + ( w4>>>17 ^ w4>>>19 ^ w4>>>10 ^ w4<<15 ^ w4<<13 ) + w6 + w15 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x81c2c92e )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 39
+        w7 = t = ( ( w8>>>7  ^ w8>>>18 ^ w8>>>3  ^ w8<<25 ^ w8<<14 ) + ( w5>>>17 ^ w5>>>19 ^ w5>>>10 ^ w5<<15 ^ w5<<13 ) + w7 + w0 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x92722c85 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 40
+        w8 = t = ( ( w9>>>7  ^ w9>>>18 ^ w9>>>3  ^ w9<<25 ^ w9<<14 ) + ( w6>>>17 ^ w6>>>19 ^ w6>>>10 ^ w6<<15 ^ w6<<13 ) + w8 + w1 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xa2bfe8a1 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 41
+        w9 = t = ( ( w10>>>7  ^ w10>>>18 ^ w10>>>3  ^ w10<<25 ^ w10<<14 ) + ( w7>>>17 ^ w7>>>19 ^ w7>>>10 ^ w7<<15 ^ w7<<13 ) + w9 + w2 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xa81a664b )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 42
+        w10 = t = ( ( w11>>>7  ^ w11>>>18 ^ w11>>>3  ^ w11<<25 ^ w11<<14 ) + ( w8>>>17 ^ w8>>>19 ^ w8>>>10 ^ w8<<15 ^ w8<<13 ) + w10 + w3 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xc24b8b70 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 43
+        w11 = t = ( ( w12>>>7  ^ w12>>>18 ^ w12>>>3  ^ w12<<25 ^ w12<<14 ) + ( w9>>>17 ^ w9>>>19 ^ w9>>>10 ^ w9<<15 ^ w9<<13 ) + w11 + w4 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xc76c51a3 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 44
+        w12 = t = ( ( w13>>>7  ^ w13>>>18 ^ w13>>>3  ^ w13<<25 ^ w13<<14 ) + ( w10>>>17 ^ w10>>>19 ^ w10>>>10 ^ w10<<15 ^ w10<<13 ) + w12 + w5 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xd192e819 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 45
+        w13 = t = ( ( w14>>>7  ^ w14>>>18 ^ w14>>>3  ^ w14<<25 ^ w14<<14 ) + ( w11>>>17 ^ w11>>>19 ^ w11>>>10 ^ w11<<15 ^ w11<<13 ) + w13 + w6 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xd6990624 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 46
+        w14 = t = ( ( w15>>>7  ^ w15>>>18 ^ w15>>>3  ^ w15<<25 ^ w15<<14 ) + ( w12>>>17 ^ w12>>>19 ^ w12>>>10 ^ w12<<15 ^ w12<<13 ) + w14 + w7 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xf40e3585 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 47
+        w15 = t = ( ( w0>>>7  ^ w0>>>18 ^ w0>>>3  ^ w0<<25 ^ w0<<14 ) + ( w13>>>17 ^ w13>>>19 ^ w13>>>10 ^ w13<<15 ^ w13<<13 ) + w15 + w8 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x106aa070 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 48
+        w0 = t = ( ( w1>>>7  ^ w1>>>18 ^ w1>>>3  ^ w1<<25 ^ w1<<14 ) + ( w14>>>17 ^ w14>>>19 ^ w14>>>10 ^ w14<<15 ^ w14<<13 ) + w0 + w9 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x19a4c116 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 49
+        w1 = t = ( ( w2>>>7  ^ w2>>>18 ^ w2>>>3  ^ w2<<25 ^ w2<<14 ) + ( w15>>>17 ^ w15>>>19 ^ w15>>>10 ^ w15<<15 ^ w15<<13 ) + w1 + w10 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x1e376c08 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 50
+        w2 = t = ( ( w3>>>7  ^ w3>>>18 ^ w3>>>3  ^ w3<<25 ^ w3<<14 ) + ( w0>>>17 ^ w0>>>19 ^ w0>>>10 ^ w0<<15 ^ w0<<13 ) + w2 + w11 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x2748774c )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 51
+        w3 = t = ( ( w4>>>7  ^ w4>>>18 ^ w4>>>3  ^ w4<<25 ^ w4<<14 ) + ( w1>>>17 ^ w1>>>19 ^ w1>>>10 ^ w1<<15 ^ w1<<13 ) + w3 + w12 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x34b0bcb5 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 52
+        w4 = t = ( ( w5>>>7  ^ w5>>>18 ^ w5>>>3  ^ w5<<25 ^ w5<<14 ) + ( w2>>>17 ^ w2>>>19 ^ w2>>>10 ^ w2<<15 ^ w2<<13 ) + w4 + w13 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x391c0cb3 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 53
+        w5 = t = ( ( w6>>>7  ^ w6>>>18 ^ w6>>>3  ^ w6<<25 ^ w6<<14 ) + ( w3>>>17 ^ w3>>>19 ^ w3>>>10 ^ w3<<15 ^ w3<<13 ) + w5 + w14 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x4ed8aa4a )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 54
+        w6 = t = ( ( w7>>>7  ^ w7>>>18 ^ w7>>>3  ^ w7<<25 ^ w7<<14 ) + ( w4>>>17 ^ w4>>>19 ^ w4>>>10 ^ w4<<15 ^ w4<<13 ) + w6 + w15 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x5b9cca4f )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 55
+        w7 = t = ( ( w8>>>7  ^ w8>>>18 ^ w8>>>3  ^ w8<<25 ^ w8<<14 ) + ( w5>>>17 ^ w5>>>19 ^ w5>>>10 ^ w5<<15 ^ w5<<13 ) + w7 + w0 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x682e6ff3 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 56
+        w8 = t = ( ( w9>>>7  ^ w9>>>18 ^ w9>>>3  ^ w9<<25 ^ w9<<14 ) + ( w6>>>17 ^ w6>>>19 ^ w6>>>10 ^ w6<<15 ^ w6<<13 ) + w8 + w1 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x748f82ee )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 57
+        w9 = t = ( ( w10>>>7  ^ w10>>>18 ^ w10>>>3  ^ w10<<25 ^ w10<<14 ) + ( w7>>>17 ^ w7>>>19 ^ w7>>>10 ^ w7<<15 ^ w7<<13 ) + w9 + w2 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x78a5636f )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 58
+        w10 = t = ( ( w11>>>7  ^ w11>>>18 ^ w11>>>3  ^ w11<<25 ^ w11<<14 ) + ( w8>>>17 ^ w8>>>19 ^ w8>>>10 ^ w8<<15 ^ w8<<13 ) + w10 + w3 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x84c87814 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 59
+        w11 = t = ( ( w12>>>7  ^ w12>>>18 ^ w12>>>3  ^ w12<<25 ^ w12<<14 ) + ( w9>>>17 ^ w9>>>19 ^ w9>>>10 ^ w9<<15 ^ w9<<13 ) + w11 + w4 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x8cc70208 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 60
+        w12 = t = ( ( w13>>>7  ^ w13>>>18 ^ w13>>>3  ^ w13<<25 ^ w13<<14 ) + ( w10>>>17 ^ w10>>>19 ^ w10>>>10 ^ w10<<15 ^ w10<<13 ) + w12 + w5 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0x90befffa )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 61
+        w13 = t = ( ( w14>>>7  ^ w14>>>18 ^ w14>>>3  ^ w14<<25 ^ w14<<14 ) + ( w11>>>17 ^ w11>>>19 ^ w11>>>10 ^ w11<<15 ^ w11<<13 ) + w13 + w6 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xa4506ceb )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 62
+        w14 = t = ( ( w15>>>7  ^ w15>>>18 ^ w15>>>3  ^ w15<<25 ^ w15<<14 ) + ( w12>>>17 ^ w12>>>19 ^ w12>>>10 ^ w12<<15 ^ w12<<13 ) + w14 + w7 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xbef9a3f7 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        // 63
+        w15 = t = ( ( w0>>>7  ^ w0>>>18 ^ w0>>>3  ^ w0<<25 ^ w0<<14 ) + ( w13>>>17 ^ w13>>>19 ^ w13>>>10 ^ w13<<15 ^ w13<<13 ) + w15 + w8 )|0;
+        t = ( t + h + ( e>>>6 ^ e>>>11 ^ e>>>25 ^ e<<26 ^ e<<21 ^ e<<7 ) +  ( g ^ e & (f^g) ) + 0xc67178f2 )|0;
+        h = g; g = f; f = e; e = ( d + t )|0; d = c; c = b; b = a;
+        a = ( t + ( (b & c) ^ ( d & (b ^ c) ) ) + ( b>>>2 ^ b>>>13 ^ b>>>22 ^ b<<30 ^ b<<19 ^ b<<10 ) )|0;
+
+        H0 = ( H0 + a )|0;
+        H1 = ( H1 + b )|0;
+        H2 = ( H2 + c )|0;
+        H3 = ( H3 + d )|0;
+        H4 = ( H4 + e )|0;
+        H5 = ( H5 + f )|0;
+        H6 = ( H6 + g )|0;
+        H7 = ( H7 + h )|0;
+    }
+
+    function _core_heap ( offset ) {
+        offset = offset|0;
+
+        _core(
+            HEAP[offset|0]<<24 | HEAP[offset|1]<<16 | HEAP[offset|2]<<8 | HEAP[offset|3],
+            HEAP[offset|4]<<24 | HEAP[offset|5]<<16 | HEAP[offset|6]<<8 | HEAP[offset|7],
+            HEAP[offset|8]<<24 | HEAP[offset|9]<<16 | HEAP[offset|10]<<8 | HEAP[offset|11],
+            HEAP[offset|12]<<24 | HEAP[offset|13]<<16 | HEAP[offset|14]<<8 | HEAP[offset|15],
+            HEAP[offset|16]<<24 | HEAP[offset|17]<<16 | HEAP[offset|18]<<8 | HEAP[offset|19],
+            HEAP[offset|20]<<24 | HEAP[offset|21]<<16 | HEAP[offset|22]<<8 | HEAP[offset|23],
+            HEAP[offset|24]<<24 | HEAP[offset|25]<<16 | HEAP[offset|26]<<8 | HEAP[offset|27],
+            HEAP[offset|28]<<24 | HEAP[offset|29]<<16 | HEAP[offset|30]<<8 | HEAP[offset|31],
+            HEAP[offset|32]<<24 | HEAP[offset|33]<<16 | HEAP[offset|34]<<8 | HEAP[offset|35],
+            HEAP[offset|36]<<24 | HEAP[offset|37]<<16 | HEAP[offset|38]<<8 | HEAP[offset|39],
+            HEAP[offset|40]<<24 | HEAP[offset|41]<<16 | HEAP[offset|42]<<8 | HEAP[offset|43],
+            HEAP[offset|44]<<24 | HEAP[offset|45]<<16 | HEAP[offset|46]<<8 | HEAP[offset|47],
+            HEAP[offset|48]<<24 | HEAP[offset|49]<<16 | HEAP[offset|50]<<8 | HEAP[offset|51],
+            HEAP[offset|52]<<24 | HEAP[offset|53]<<16 | HEAP[offset|54]<<8 | HEAP[offset|55],
+            HEAP[offset|56]<<24 | HEAP[offset|57]<<16 | HEAP[offset|58]<<8 | HEAP[offset|59],
+            HEAP[offset|60]<<24 | HEAP[offset|61]<<16 | HEAP[offset|62]<<8 | HEAP[offset|63]
+        );
+    }
+
+    // offset — multiple of 32
+    function _state_to_heap ( output ) {
+        output = output|0;
+
+        HEAP[output|0] = H0>>>24;
+        HEAP[output|1] = H0>>>16&255;
+        HEAP[output|2] = H0>>>8&255;
+        HEAP[output|3] = H0&255;
+        HEAP[output|4] = H1>>>24;
+        HEAP[output|5] = H1>>>16&255;
+        HEAP[output|6] = H1>>>8&255;
+        HEAP[output|7] = H1&255;
+        HEAP[output|8] = H2>>>24;
+        HEAP[output|9] = H2>>>16&255;
+        HEAP[output|10] = H2>>>8&255;
+        HEAP[output|11] = H2&255;
+        HEAP[output|12] = H3>>>24;
+        HEAP[output|13] = H3>>>16&255;
+        HEAP[output|14] = H3>>>8&255;
+        HEAP[output|15] = H3&255;
+        HEAP[output|16] = H4>>>24;
+        HEAP[output|17] = H4>>>16&255;
+        HEAP[output|18] = H4>>>8&255;
+        HEAP[output|19] = H4&255;
+        HEAP[output|20] = H5>>>24;
+        HEAP[output|21] = H5>>>16&255;
+        HEAP[output|22] = H5>>>8&255;
+        HEAP[output|23] = H5&255;
+        HEAP[output|24] = H6>>>24;
+        HEAP[output|25] = H6>>>16&255;
+        HEAP[output|26] = H6>>>8&255;
+        HEAP[output|27] = H6&255;
+        HEAP[output|28] = H7>>>24;
+        HEAP[output|29] = H7>>>16&255;
+        HEAP[output|30] = H7>>>8&255;
+        HEAP[output|31] = H7&255;
+    }
+
+    function reset () {
+        H0 = 0x6a09e667;
+        H1 = 0xbb67ae85;
+        H2 = 0x3c6ef372;
+        H3 = 0xa54ff53a;
+        H4 = 0x510e527f;
+        H5 = 0x9b05688c;
+        H6 = 0x1f83d9ab;
+        H7 = 0x5be0cd19;
+        TOTAL0 = TOTAL1 = 0;
+    }
+
+    function init ( h0, h1, h2, h3, h4, h5, h6, h7, total0, total1 ) {
+        h0 = h0|0;
+        h1 = h1|0;
+        h2 = h2|0;
+        h3 = h3|0;
+        h4 = h4|0;
+        h5 = h5|0;
+        h6 = h6|0;
+        h7 = h7|0;
+        total0 = total0|0;
+        total1 = total1|0;
+
+        H0 = h0;
+        H1 = h1;
+        H2 = h2;
+        H3 = h3;
+        H4 = h4;
+        H5 = h5;
+        H6 = h6;
+        H7 = h7;
+        TOTAL0 = total0;
+        TOTAL1 = total1;
+    }
+
+    // offset — multiple of 64
+    function process ( offset, length ) {
+        offset = offset|0;
+        length = length|0;
+
+        var hashed = 0;
+
+        if ( offset & 63 )
+            return -1;
+
+        while ( (length|0) >= 64 ) {
+            _core_heap(offset);
+
+            offset = ( offset + 64 )|0;
+            length = ( length - 64 )|0;
+
+            hashed = ( hashed + 64 )|0;
+        }
+
+        TOTAL0 = ( TOTAL0 + hashed )|0;
+        if ( TOTAL0>>>0 < hashed>>>0 ) TOTAL1 = ( TOTAL1 + 1 )|0;
+
+        return hashed|0;
+    }
+
+    // offset — multiple of 64
+    // output — multiple of 32
+    function finish ( offset, length, output ) {
+        offset = offset|0;
+        length = length|0;
+        output = output|0;
+
+        var hashed = 0,
+            i = 0;
+
+        if ( offset & 63 )
+            return -1;
+
+        if ( ~output )
+            if ( output & 31 )
+                return -1;
+
+        if ( (length|0) >= 64 ) {
+            hashed = process( offset, length )|0;
+            if ( (hashed|0) == -1 )
+                return -1;
+
+            offset = ( offset + hashed )|0;
+            length = ( length - hashed )|0;
+        }
+
+        hashed = ( hashed + length )|0;
+        TOTAL0 = ( TOTAL0 + length )|0;
+        if ( TOTAL0>>>0 < length>>>0 ) TOTAL1 = ( TOTAL1 + 1 )|0;
+
+        HEAP[offset|length] = 0x80;
+
+        if ( (length|0) >= 56 ) {
+            for ( i = (length+1)|0; (i|0) < 64; i = (i+1)|0 )
+                HEAP[offset|i] = 0x00;
+
+            _core_heap(offset);
+
+            length = 0;
+
+            HEAP[offset|0] = 0;
+        }
+
+        for ( i = (length+1)|0; (i|0) < 59; i = (i+1)|0 )
+            HEAP[offset|i] = 0;
+
+        HEAP[offset|56] = TOTAL1>>>21&255;
+        HEAP[offset|57] = TOTAL1>>>13&255;
+        HEAP[offset|58] = TOTAL1>>>5&255;
+        HEAP[offset|59] = TOTAL1<<3&255 | TOTAL0>>>29;
+        HEAP[offset|60] = TOTAL0>>>21&255;
+        HEAP[offset|61] = TOTAL0>>>13&255;
+        HEAP[offset|62] = TOTAL0>>>5&255;
+        HEAP[offset|63] = TOTAL0<<3&255;
+        _core_heap(offset);
+
+        if ( ~output )
+            _state_to_heap(output);
+
+        return hashed|0;
+    }
+
+    function hmac_reset () {
+        H0 = I0;
+        H1 = I1;
+        H2 = I2;
+        H3 = I3;
+        H4 = I4;
+        H5 = I5;
+        H6 = I6;
+        H7 = I7;
+        TOTAL0 = 64;
+        TOTAL1 = 0;
+    }
+
+    function _hmac_opad () {
+        H0 = O0;
+        H1 = O1;
+        H2 = O2;
+        H3 = O3;
+        H4 = O4;
+        H5 = O5;
+        H6 = O6;
+        H7 = O7;
+        TOTAL0 = 64;
+        TOTAL1 = 0;
+    }
+
+    function hmac_init ( p0, p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11, p12, p13, p14, p15 ) {
+        p0 = p0|0;
+        p1 = p1|0;
+        p2 = p2|0;
+        p3 = p3|0;
+        p4 = p4|0;
+        p5 = p5|0;
+        p6 = p6|0;
+        p7 = p7|0;
+        p8 = p8|0;
+        p9 = p9|0;
+        p10 = p10|0;
+        p11 = p11|0;
+        p12 = p12|0;
+        p13 = p13|0;
+        p14 = p14|0;
+        p15 = p15|0;
+
+        // opad
+        reset();
+        _core(
+            p0 ^ 0x5c5c5c5c,
+            p1 ^ 0x5c5c5c5c,
+            p2 ^ 0x5c5c5c5c,
+            p3 ^ 0x5c5c5c5c,
+            p4 ^ 0x5c5c5c5c,
+            p5 ^ 0x5c5c5c5c,
+            p6 ^ 0x5c5c5c5c,
+            p7 ^ 0x5c5c5c5c,
+            p8 ^ 0x5c5c5c5c,
+            p9 ^ 0x5c5c5c5c,
+            p10 ^ 0x5c5c5c5c,
+            p11 ^ 0x5c5c5c5c,
+            p12 ^ 0x5c5c5c5c,
+            p13 ^ 0x5c5c5c5c,
+            p14 ^ 0x5c5c5c5c,
+            p15 ^ 0x5c5c5c5c
+        );
+        O0 = H0;
+        O1 = H1;
+        O2 = H2;
+        O3 = H3;
+        O4 = H4;
+        O5 = H5;
+        O6 = H6;
+        O7 = H7;
+
+        // ipad
+        reset();
+        _core(
+            p0 ^ 0x36363636,
+            p1 ^ 0x36363636,
+            p2 ^ 0x36363636,
+            p3 ^ 0x36363636,
+            p4 ^ 0x36363636,
+            p5 ^ 0x36363636,
+            p6 ^ 0x36363636,
+            p7 ^ 0x36363636,
+            p8 ^ 0x36363636,
+            p9 ^ 0x36363636,
+            p10 ^ 0x36363636,
+            p11 ^ 0x36363636,
+            p12 ^ 0x36363636,
+            p13 ^ 0x36363636,
+            p14 ^ 0x36363636,
+            p15 ^ 0x36363636
+        );
+        I0 = H0;
+        I1 = H1;
+        I2 = H2;
+        I3 = H3;
+        I4 = H4;
+        I5 = H5;
+        I6 = H6;
+        I7 = H7;
+
+        TOTAL0 = 64;
+        TOTAL1 = 0;
+    }
+
+    // offset — multiple of 64
+    // output — multiple of 32
+    function hmac_finish ( offset, length, output ) {
+        offset = offset|0;
+        length = length|0;
+        output = output|0;
+
+        var t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0, t7 = 0,
+            hashed = 0;
+
+        if ( offset & 63 )
+            return -1;
+
+        if ( ~output )
+            if ( output & 31 )
+                return -1;
+
+        hashed = finish( offset, length, -1 )|0;
+        t0 = H0, t1 = H1, t2 = H2, t3 = H3, t4 = H4, t5 = H5, t6 = H6, t7 = H7;
+
+        _hmac_opad();
+        _core( t0, t1, t2, t3, t4, t5, t6, t7, 0x80000000, 0, 0, 0, 0, 0, 0, 768 );
+
+        if ( ~output )
+            _state_to_heap(output);
+
+        return hashed|0;
+    }
+
+    // salt is assumed to be already processed
+    // offset — multiple of 64
+    // output — multiple of 32
+    function pbkdf2_generate_block ( offset, length, block, count, output ) {
+        offset = offset|0;
+        length = length|0;
+        block = block|0;
+        count = count|0;
+        output = output|0;
+
+        var h0 = 0, h1 = 0, h2 = 0, h3 = 0, h4 = 0, h5 = 0, h6 = 0, h7 = 0,
+            t0 = 0, t1 = 0, t2 = 0, t3 = 0, t4 = 0, t5 = 0, t6 = 0, t7 = 0;
+
+        if ( offset & 63 )
+            return -1;
+
+        if ( ~output )
+            if ( output & 31 )
+                return -1;
+
+        // pad block number into heap
+        // FIXME probable OOB write
+        HEAP[(offset+length)|0]   = block>>>24;
+        HEAP[(offset+length+1)|0] = block>>>16&255;
+        HEAP[(offset+length+2)|0] = block>>>8&255;
+        HEAP[(offset+length+3)|0] = block&255;
+
+        // finish first iteration
+        hmac_finish( offset, (length+4)|0, -1 )|0;
+        h0 = t0 = H0, h1 = t1 = H1, h2 = t2 = H2, h3 = t3 = H3, h4 = t4 = H4, h5 = t5 = H5, h6 = t6 = H6, h7 = t7 = H7;
+        count = (count-1)|0;
+
+        // perform the rest iterations
+        while ( (count|0) > 0 ) {
+            hmac_reset();
+            _core( t0, t1, t2, t3, t4, t5, t6, t7, 0x80000000, 0, 0, 0, 0, 0, 0, 768 );
+            t0 = H0, t1 = H1, t2 = H2, t3 = H3, t4 = H4, t5 = H5, t6 = H6, t7 = H7;
+
+            _hmac_opad();
+            _core( t0, t1, t2, t3, t4, t5, t6, t7, 0x80000000, 0, 0, 0, 0, 0, 0, 768 );
+            t0 = H0, t1 = H1, t2 = H2, t3 = H3, t4 = H4, t5 = H5, t6 = H6, t7 = H7;
+
+            h0 = h0 ^ H0;
+            h1 = h1 ^ H1;
+            h2 = h2 ^ H2;
+            h3 = h3 ^ H3;
+            h4 = h4 ^ H4;
+            h5 = h5 ^ H5;
+            h6 = h6 ^ H6;
+            h7 = h7 ^ H7;
+
+            count = (count-1)|0;
+        }
+
+        H0 = h0;
+        H1 = h1;
+        H2 = h2;
+        H3 = h3;
+        H4 = h4;
+        H5 = h5;
+        H6 = h6;
+        H7 = h7;
+
+        if ( ~output )
+            _state_to_heap(output);
+
+        return 0;
+    }
+
+    return {
+        // SHA256
+        reset: reset,
+        init: init,
+        process: process,
+        finish: finish,
+
+        // HMAC-SHA256
+        hmac_reset: hmac_reset,
+        hmac_init: hmac_init,
+        hmac_finish: hmac_finish,
+
+        // PBKDF2-HMAC-SHA256
+        pbkdf2_generate_block: pbkdf2_generate_block
+    }
+}
 
 }
 };

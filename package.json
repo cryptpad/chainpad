@@ -1,16 +1,19 @@
 {
   "name": "chainpad",
   "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
-  "version": "0.2.5",
+  "version": "0.3.0",
   "dependencies": {
     "gluejs": "~2.4.0",
     "xmhell": "~0.1.2",
     "nthen": "~0.1.1"
   },
   "devDependencies": {
+    "flow-bin": "^0.42.0",
     "jshint": "~2.9.1"
   },
   "scripts": {
-      "lint": "jshint --config .jshintrc --exclude-path .jshintignore ."
+    "lint": "jshint --config .jshintrc --exclude-path .jshintignore .",
+    "flow": "./node_modules/.bin/flow",
+    "test": "node ./test.js"
   }
 }
