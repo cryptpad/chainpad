@@ -190,7 +190,7 @@ var sync = function (realtime) {
     });
 };
 
-var storeMessage = function (realtime, msg /*:Message_t*/) {
+var storeMessage = function (realtime, msg) {
     Common.assert(msg.lastMsgHash);
     Common.assert(msg.hashOf);
     realtime.messages[msg.hashOf] = msg;
@@ -216,36 +216,7 @@ var forgetMessage = function (realtime, msg) {
     }
 };
 
-/*::
-import type { Sha256_t } from './sha256';
-import type { Patch_t } from './Patch';
-import type { Message_t } from './Message';
-type ChainPad_Internal_t = {
-    type: 'ChainPad',
-    authDoc: string,
-    config: ChainPad_Config_t,
-    logLevel: number,
-    uncommitted: Patch_t,
-    uncommittedDocLength: number,
-    patchHandlers: Array<(Patch_t)=>void>,
-    changeHandlers: Array<(number, number, string)=>void>,
-    messageHandlers: Array<(string, ()=>void)=>void>,
-    schedules: Array<number>,
-    aborted: boolean,
-    syncSchedule: number,
-    userInterfaceContent: string,
-    setContentPatch: ?Patch_t,
-    pending: ?{ hash: Sha256_t, callback: ()=>void },
-    messages: { [Sha256_t]: Message_t },
-    messagesByParent: { [Sha256_t]: Message_t },
-    rootMessage: Message_t,
-    onSettle: Array<()=>void>,
-    userName: string,
-    best: Message_t
-};
-*/
-
-var create = ChainPad.create = function (config /*:ChainPad_Config_t*/) {
+var create = ChainPad.create = function (config) {
 
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     mkInverse(zeroPatch, '');
@@ -791,21 +762,6 @@ var wrapMessage = function (realtime, msg) {
     });
 };
 
-/*::
-import type { Operation_Simplify_t, Operation_Transform_t } from './Operation';
-export type ChainPad_Config_t = {
-    initialState: string,
-    checkpointInterval: number,
-    avgSyncMilliseconds: number,
-    strictCheckpointValidation: boolean,
-    operationSimplify: Operation_Simplify_t,
-    logLevel: number,
-    transformFunction: Operation_Transform_t,
-    userName: string,
-    validateContent: (string)=>boolean
-};
-*/
-
 var mkConfig = function (config) {
     config = config || {};
     return Object.freeze({
@@ -822,7 +778,23 @@ var mkConfig = function (config) {
     });
 };
 
-module.exports.create = function (conf /*:Object*/) {
+/*::
+import type { Operation_Transform_t } from './Operation';
+import type { Operation_Simplify_t } from './Operation';
+import type { Patch_t } from './Patch';
+export type ChainPad_Config_t = {
+    initialState?: string,
+    checkpointInterval?: number,
+    avgSyncMilliseconds?: number,
+    strictCheckpointValidation?: boolean,
+    operationSimplify?: Operation_Simplify_t,
+    logLevel?: number,
+    transformFunction?: Operation_Transform_t,
+    userName?: string,
+    validateContent?: (string)=>boolean
+};
+*/
+module.exports.create = function (conf /*:ChainPad_Config_t*/) {
     var realtime = ChainPad.create(mkConfig(conf));
     var out = {
         onPatch: function (handler /*:(Patch_t)=>void*/) {
