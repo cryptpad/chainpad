@@ -16,15 +16,13 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 "use strict";
+
+global.localStorage = { TESTING: true };
+
 var ChainPad = require('./ChainPad');
 var Common = require('./Common');
 var Operation = require('./Operation');
 var nThen = require('nthen');
-/*::
-import type { Message_t } from './Message';
-*/
-
-ChainPad.Common.TESTING = true;
 
 var xsetInterval = function (call, ms) {
     var inter = setInterval(function () {
@@ -43,7 +41,7 @@ var startup = function (callback) {
 };
 
 var runOperation = function (realtimeFacade, op) {
-    realtimeFacade.change(op.offset, op.toRemove, op.toInsert);
+    realtimeFacade.rt.change(op.offset, op.toRemove, op.toInsert);
 };
 
 var insert = function (doc, offset, chars) {
@@ -82,7 +80,7 @@ var registerNode = function (name, initialDoc, conf) {
         getBlockForHash: rt.getBlockForHash,
 
         queue: [],
-        cp: rt,
+        rt: rt,
         doc: initialDoc,
     };
     rt.onPatch(function () { out.doc = rt.getUserDoc(); });

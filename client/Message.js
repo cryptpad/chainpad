@@ -101,3 +101,5 @@ var hashOf = Message.hashOf = function (msg /*:Message_t*/) {
     var hash = Sha.hex_sha256(toString(msg));
     return hash;
 };
+
+Object.freeze(module.exports);

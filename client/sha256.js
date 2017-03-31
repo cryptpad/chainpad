@@ -58,3 +58,5 @@ module.exports.hex_sha256 = function (d /*:string*/) /*:Sha256_t*/ {
     }
     return ret;
 };
+
+Object.freeze(module.exports);

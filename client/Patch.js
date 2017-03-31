@@ -345,3 +345,5 @@ var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     check(patch);
     return patch;
 };
+
+Object.freeze(module.exports);

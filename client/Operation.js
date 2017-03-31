@@ -298,3 +298,5 @@ var random = Operation.random = function (docLength /*:number*/) {
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
 };
+
+Object.freeze(module.exports);

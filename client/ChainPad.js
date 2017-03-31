@@ -22,8 +22,6 @@ var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./sha256');
 
-var ChainPad = {};
-
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
     'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
@@ -216,7 +214,7 @@ var forgetMessage = function (realtime, msg) {
     }
 };
 
-var create = ChainPad.create = function (config) {
+var create = function (config) {
 
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     mkInverse(zeroPatch, '');
@@ -293,7 +291,7 @@ var getParent = function (realtime, message) {
     return parent;
 };
 
-var check = ChainPad.check = function(realtime) {
+var check = function(realtime) {
     Common.assert(realtime.type === 'ChainPad');
     Common.assert(typeof(realtime.authDoc) === 'string');
 
@@ -324,7 +322,7 @@ var check = ChainPad.check = function(realtime) {
     Common.assert(doc === realtime.authDoc);
 };
 
-var doOperation = ChainPad.doOperation = function (realtime, op) {
+var doOperation = function (realtime, op) {
     if (Common.PARANOIA) {
         check(realtime);
         realtime.userInterfaceContent = Operation.apply(op, realtime.userInterfaceContent);
@@ -334,7 +332,7 @@ var doOperation = ChainPad.doOperation = function (realtime, op) {
     realtime.uncommittedDocLength += Operation.lengthChange(op);
 };
 
-var doPatch = ChainPad.doPatch = function (realtime, patch) {
+var doPatch = function (realtime, patch) {
     if (Common.PARANOIA) {
         check(realtime);
         Common.assert(Patch.invert(realtime.uncommitted, realtime.authDoc).parentHash ===
@@ -453,7 +451,7 @@ var mkInverse = function (patch, content) {
     inverse.mut.inverseOf = patch;
 };
 
-var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromMe) {
+var handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
@@ -795,7 +793,7 @@ export type ChainPad_Config_t = {
 };
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
-    var realtime = ChainPad.create(mkConfig(conf));
+    var realtime = create(mkConfig(conf));
     var out = {
         onPatch: function (handler /*:(Patch_t)=>void*/) {
             Common.assert(typeof(handler) === 'function');
@@ -872,5 +870,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
     if (Common.DEBUG) {
         out._ = realtime;
     }
-    return out;
+    return Object.freeze(out);
 };
+
+Object.freeze(module.exports);

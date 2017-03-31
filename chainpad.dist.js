@@ -350,6 +350,8 @@ var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     return patch;
 };
 
+Object.freeze(module.exports);
+
 },
 "sha256.js": function(module, exports, require){
 /*@flow*/
@@ -412,6 +414,8 @@ module.exports.hex_sha256 = function (d /*:string*/) /*:Sha256_t*/ {
     }
     return ret;
 };
+
+Object.freeze(module.exports);
 
 },
 "SHA256.js": function(module, exports, require){
@@ -556,6 +560,8 @@ var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );
 };
 
+Object.freeze(module.exports);
+
 },
 "Message.js": function(module, exports, require){
 /*@flow*/
@@ -662,6 +668,8 @@ var hashOf = Message.hashOf = function (msg /*:Message_t*/) {
     return hash;
 };
 
+Object.freeze(module.exports);
+
 },
 "ChainPad.js": function(module, exports, require){
 /*@flow*/
@@ -687,8 +695,6 @@ var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./sha256');
-
-var ChainPad = {};
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -856,7 +862,7 @@ var sync = function (realtime) {
     });
 };
 
-var storeMessage = function (realtime, msg /*:Message_t*/) {
+var storeMessage = function (realtime, msg) {
     Common.assert(msg.lastMsgHash);
     Common.assert(msg.hashOf);
     realtime.messages[msg.hashOf] = msg;
@@ -882,36 +888,7 @@ var forgetMessage = function (realtime, msg) {
     }
 };
 
-/*::
-import type { Sha256_t } from './sha256';
-import type { Patch_t } from './Patch';
-import type { Message_t } from './Message';
-type ChainPad_Internal_t = {
-    type: 'ChainPad',
-    authDoc: string,
-    config: ChainPad_Config_t,
-    logLevel: number,
-    uncommitted: Patch_t,
-    uncommittedDocLength: number,
-    patchHandlers: Array<(Patch_t)=>void>,
-    changeHandlers: Array<(number, number, string)=>void>,
-    messageHandlers: Array<(string, ()=>void)=>void>,
-    schedules: Array<number>,
-    aborted: boolean,
-    syncSchedule: number,
-    userInterfaceContent: string,
-    setContentPatch: ?Patch_t,
-    pending: ?{ hash: Sha256_t, callback: ()=>void },
-    messages: { [Sha256_t]: Message_t },
-    messagesByParent: { [Sha256_t]: Message_t },
-    rootMessage: Message_t,
-    onSettle: Array<()=>void>,
-    userName: string,
-    best: Message_t
-};
-*/
-
-var create = ChainPad.create = function (config /*:ChainPad_Config_t*/) {
+var create = function (config) {
 
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
     mkInverse(zeroPatch, '');
@@ -988,7 +965,7 @@ var getParent = function (realtime, message) {
     return parent;
 };
 
-var check = ChainPad.check = function(realtime) {
+var check = function(realtime) {
     Common.assert(realtime.type === 'ChainPad');
     Common.assert(typeof(realtime.authDoc) === 'string');
 
@@ -1019,7 +996,7 @@ var check = ChainPad.check = function(realtime) {
     Common.assert(doc === realtime.authDoc);
 };
 
-var doOperation = ChainPad.doOperation = function (realtime, op) {
+var doOperation = function (realtime, op) {
     if (Common.PARANOIA) {
         check(realtime);
         realtime.userInterfaceContent = Operation.apply(op, realtime.userInterfaceContent);
@@ -1029,7 +1006,7 @@ var doOperation = ChainPad.doOperation = function (realtime, op) {
     realtime.uncommittedDocLength += Operation.lengthChange(op);
 };
 
-var doPatch = ChainPad.doPatch = function (realtime, patch) {
+var doPatch = function (realtime, patch) {
     if (Common.PARANOIA) {
         check(realtime);
         Common.assert(Patch.invert(realtime.uncommitted, realtime.authDoc).parentHash ===
@@ -1148,7 +1125,7 @@ var mkInverse = function (patch, content) {
     inverse.mut.inverseOf = patch;
 };
 
-var handleMessage = ChainPad.handleMessage = function (realtime, msgStr, isFromMe) {
+var handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
@@ -1457,21 +1434,6 @@ var wrapMessage = function (realtime, msg) {
     });
 };
 
-/*::
-import type { Operation_Simplify_t, Operation_Transform_t } from './Operation';
-export type ChainPad_Config_t = {
-    initialState: string,
-    checkpointInterval: number,
-    avgSyncMilliseconds: number,
-    strictCheckpointValidation: boolean,
-    operationSimplify: Operation_Simplify_t,
-    logLevel: number,
-    transformFunction: Operation_Transform_t,
-    userName: string,
-    validateContent: (string)=>boolean
-};
-*/
-
 var mkConfig = function (config) {
     config = config || {};
     return Object.freeze({
@@ -1488,8 +1450,24 @@ var mkConfig = function (config) {
     });
 };
 
-module.exports.create = function (conf /*:Object*/) {
-    var realtime = ChainPad.create(mkConfig(conf));
+/*::
+import type { Operation_Transform_t } from './Operation';
+import type { Operation_Simplify_t } from './Operation';
+import type { Patch_t } from './Patch';
+export type ChainPad_Config_t = {
+    initialState?: string,
+    checkpointInterval?: number,
+    avgSyncMilliseconds?: number,
+    strictCheckpointValidation?: boolean,
+    operationSimplify?: Operation_Simplify_t,
+    logLevel?: number,
+    transformFunction?: Operation_Transform_t,
+    userName?: string,
+    validateContent?: (string)=>boolean
+};
+*/
+module.exports.create = function (conf /*:ChainPad_Config_t*/) {
+    var realtime = create(mkConfig(conf));
     var out = {
         onPatch: function (handler /*:(Patch_t)=>void*/) {
             Common.assert(typeof(handler) === 'function');
@@ -1566,8 +1544,10 @@ module.exports.create = function (conf /*:Object*/) {
     if (Common.DEBUG) {
         out._ = realtime;
     }
-    return out;
+    return Object.freeze(out);
 };
+
+Object.freeze(module.exports);
 
 },
 "Operation.js": function(module, exports, require){
@@ -1871,6 +1851,8 @@ var random = Operation.random = function (docLength /*:number*/) {
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
 };
+
+Object.freeze(module.exports);
 
 },
 "sha256/hash.js": function(module, exports, require){

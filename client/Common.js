@@ -54,3 +54,5 @@ var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     if (PARANOIA && typeof(b) !== 'string') { throw new Error(); }
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );
 };
+
+Object.freeze(module.exports);
