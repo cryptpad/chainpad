@@ -4,3 +4,5 @@ node_modules/
 /alltests.js
 /randhtml.js
 /otaml.js
+/client/SHA256.js
+/client/sha256/
