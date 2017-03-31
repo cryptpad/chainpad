@@ -914,8 +914,7 @@ type ChainPad_Internal_t = {
 var create = ChainPad.create = function (config /*:ChainPad_Config_t*/) {
 
     var zeroPatch = Patch.create(EMPTY_STR_HASH);
-    zeroPatch.mut.inverseOf = Patch.invert(zeroPatch, '');
-    zeroPatch.mut.inverseOf.mut.inverseOf = zeroPatch;
+    mkInverse(zeroPatch, '');
     var zeroMsg = Message.create(Message.PATCH, zeroPatch, ZERO);
     zeroMsg.mut.parentCount = 0;
     zeroMsg.mut.isInitialMessage = true;
@@ -925,8 +924,7 @@ var create = ChainPad.create = function (config /*:ChainPad_Config_t*/) {
     if (config.initialState !== '') {
         var initPatch = Patch.create(EMPTY_STR_HASH);
         Patch.addOperation(initPatch, Operation.create(0, 0, config.initialState));
-        initPatch.mut.inverseOf = Patch.invert(initPatch, '');
-        initPatch.mut.inverseOf.mut.inverseOf = initPatch;
+        mkInverse(initPatch, '');
         initMsg = Message.create(Message.PATCH, initPatch, zeroMsg.hashOf);
         initMsg.mut.isInitialMessage = true;
         best = initMsg;
