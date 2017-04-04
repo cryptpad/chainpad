@@ -1476,7 +1476,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         patch: function (patch /*:Patch_t|number*/, x /*:?number*/, y /*:?string*/) {
             if (typeof(patch) === 'number') {
                 // Actually they meant to call realtime.change()
-                if (!x || !y) { throw new Error(); }
+                if (typeof(x) !== 'number' || typeof(y) !== 'string') { throw new Error(); }
                 out.change(patch, x, y);
                 return;
             }
