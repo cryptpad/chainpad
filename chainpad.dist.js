@@ -1260,7 +1260,9 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
         return;
     }
 
-    if (patch.isCheckpoint) {
+    if (patch.isCheckpoint && realtime.config.noPrune) {
+        // do nothing, just fall through
+    } else if (patch.isCheckpoint) {
         // Ok, we have a checkpoint patch.
         // If the chain length is not equal to checkpointInterval then this patch is invalid.
         var checkpointP;
@@ -1463,7 +1465,8 @@ export type ChainPad_Config_t = {
     logLevel?: number,
     transformFunction?: Operation_Transform_t,
     userName?: string,
-    validateContent?: (string)=>boolean
+    validateContent?: (string)=>boolean,
+    noPrune?: boolean
 };
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
