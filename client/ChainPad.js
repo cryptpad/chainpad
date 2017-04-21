@@ -772,6 +772,7 @@ var mkConfig = function (config) {
             DEFAULT_STRICT_CHECKPOINT_VALIDATION,
         operationSimplify: config.operationSimplify || Operation.simplify,
         logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        noPrune: config.noPrune,
         transformFunction: config.transformFunction || Operation.transform0,
         userName: config.userName || 'anonymous',
         validateContent: config.validateContent || function () { return true; }
