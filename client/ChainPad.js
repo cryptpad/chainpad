@@ -75,12 +75,16 @@ var onMessage = function (realtime, message, callback) {
     if (!realtime.messageHandlers.length) {
         callback("no onMessage() handler registered");
     }
-    realtime.messageHandlers.forEach(function (handler) {
-        handler(message, function () {
-            callback.apply(null, arguments);
-            callback = function () { };
+    try {
+        realtime.messageHandlers.forEach(function (handler) {
+            handler(message, function () {
+                callback.apply(null, arguments);
+                callback = function () { };
+            });
         });
-    });
+    } catch (e) {
+        callback(e);
+    }
 };
 
 var sendMessage = function (realtime, msg, callback) {
