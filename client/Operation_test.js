@@ -113,6 +113,21 @@ var simplify = function (cycles, callback) {
     callback();
 };
 
+var emoji = function(callback) {
+    var oldEmoji = "abc\uD83D\uDE00def";
+    var newEmoji = "abc\uD83D\uDE11def";
+
+    var op = Operation.create(3, 2, newEmoji);
+    var sop = Operation.simplify(op, oldEmoji);
+
+    Common.assert(sop !== null);
+    if (sop !== null)
+    {
+        Common.assert(op.toRemove === sop.toRemove);
+    }
+    callback();
+};
+
 var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         simplify(cycles, waitFor());
@@ -122,5 +137,7 @@ var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>v
         toObjectFromObject(cycles, waitFor());
     }).nThen(function (waitFor) {
         merge(cycles, waitFor());
+    }).nThen(function (waitFor) {
+        emoji(waitFor());
     }).nThen(callback);
 };
