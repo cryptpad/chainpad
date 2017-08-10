@@ -125,6 +125,7 @@ var emoji = function(callback) {
     {
         Common.assert(op.toRemove === sop.toRemove);
     }
+    callback();
 };
 
 var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
