@@ -1655,6 +1655,12 @@ var invert = Operation.invert = function (op /*:Operation_t*/, doc /*:string*/) 
     );
 };
 
+// see http://unicode.org/faq/utf_bom.html#utf16-7
+var surrogatePattern = /[\uD800-\uDBFF]|[\uDC00-\uDFFF]/;
+var hasSurrogate = Operation.hasSurrogate = function(str /*:string*/) {
+    return surrogatePattern.test(str);
+};
+
 var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
@@ -1664,8 +1670,17 @@ var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string
     var rop = invert(op, doc);
 
     var minLen = Math.min(op.toInsert.length, rop.toInsert.length);
-    var i;
-    for (i = 0; i < minLen && rop.toInsert[i] === op.toInsert[i]; i++) ;
+    var i = 0;
+    while (i < minLen && rop.toInsert[i] === op.toInsert[i]) {
+        if (hasSurrogate(rop.toInsert[i]) || hasSurrogate(op.toInsert[i])) {
+            if (op.toInsert[i + 1] === rop.toInsert[i + 1]) {
+                i++;
+            } else {
+                break;
+            }
+        }
+        i++;
+    }
     var opOffset = op.offset + i;
     var opToRemove = op.toRemove - i;
     var opToInsert = op.toInsert.substring(i);
