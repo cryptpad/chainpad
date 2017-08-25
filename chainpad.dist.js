@@ -761,7 +761,7 @@ var onMessage = function (realtime, message, callback) {
     }
 };
 
-var sendMessage = function (realtime, msg, callback) {
+var sendMessage = function (realtime, msg, callback, timeSent) {
     var strMsg = Message.toString(msg);
 
     onMessage(realtime, strMsg, function (err) {
@@ -773,6 +773,7 @@ var sendMessage = function (realtime, msg, callback) {
             realtime.pending = null;
             if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
+            realtime.lag = +new Date() - pending.timeSent;
             handleMessage(realtime, strMsg, true);
             pending.callback();
         }
@@ -780,12 +781,17 @@ var sendMessage = function (realtime, msg, callback) {
 
     var timeout = schedule(realtime, function () {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
-        sync(realtime);
+        if (!realtime.pending) { throw new Error(); }
+        var timeSent = realtime.pending.timeSent;
+        realtime.pending = null;
+        realtime.syncSchedule = -1;
+        sync(realtime, timeSent);
     }, 10000 + (Math.random() * 5000));
 
     if (realtime.pending) { throw new Error("there is already a pending message"); }
     realtime.pending = {
         hash: msg.hashOf,
+        timeSent: timeSent || +new Date(),
         callback: function () {
             unschedule(realtime, timeout);
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
@@ -812,7 +818,7 @@ var inversePatch = function (patch) {
     return patch.mut.inverseOf;
 };
 
-var sync = function (realtime) {
+var sync = function (realtime, timeSent) {
     if (Common.PARANOIA) { check(realtime); }
     if (realtime.syncSchedule && !realtime.pending) {
         unschedule(realtime, realtime.syncSchedule);
@@ -846,7 +852,7 @@ var sync = function (realtime) {
         var cp = Message.create(Message.CHECKPOINT, cpp, best.hashOf);
         sendMessage(realtime, cp, function () {
             debug(realtime, "Checkpoint sent and accepted");
-        });
+        }, timeSent);
         return;
     }
 
@@ -863,7 +869,7 @@ var sync = function (realtime) {
             debug(realtime, "initial Ack received [" + msg.hashOf + "]");
             realtime.setContentPatch = null;
         }
-    });
+    }, timeSent);
 };
 
 var storeMessage = function (realtime, msg) {
@@ -955,7 +961,9 @@ var create = function (config) {
 
         userName: config.userName,
 
-        best: best
+        best: best,
+
+        lag: 0
     };
     storeMessage(realtime, zeroMsg);
     if (initMsg) {
@@ -1545,6 +1553,13 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
             Common.assert(typeof(hash) === 'string');
             var msg = realtime.messages[hash];
             if (msg) { return wrapMessage(realtime, msg); }
+        },
+
+        getLag: function () {
+            var isPending = !!realtime.pending;
+            var lag = realtime.lag;
+            if (realtime.pending) { lag = +new Date() - realtime.pending.timeSent; }
+            return { pending: isPending, lag: lag };
         },
 
         _: undefined

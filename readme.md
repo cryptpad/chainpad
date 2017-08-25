@@ -219,6 +219,14 @@ prove that no patch will be reverted because of a chain fork, but it does verify
 has hit the server and been acknowledged. The handler will be called only once the next time the
 state is settled but you can re-register inside of the handler.
 
+### chainpad.getLag()
+
+Tells the amount of lag between the last onMessage events being fired by chainpad and the callback.
+Specifically this returns an object with lag and pending properties. Pending is true if a message
+has been sent which has not yet been acknoledged. Lag is the amount of time between the previous
+sent message and it's response or if the previously send message has not yet been acknoledged, it
+is the amount of time since it was sent.
+
 # Internals
 
 ## Data Types
