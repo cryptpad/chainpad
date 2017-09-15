@@ -1519,6 +1519,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         },
 
         start: function () {
+            realtime.aborted = false;
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         },
