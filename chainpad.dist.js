@@ -773,6 +773,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
             realtime.pending = null;
             if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
+            realtime.timeOfLastSuccessfulMessage = +new Date();
             realtime.lag = +new Date() - pending.timeSent;
             handleMessage(realtime, strMsg, true);
             pending.callback();
@@ -939,7 +940,7 @@ var create = function (config) {
         schedules: [],
         aborted: false,
 
-        syncSchedule: -1,
+        syncSchedule: -2,
 
         // this is only used if PARANOIA is enabled.
         userInterfaceContent: config.initialState,
@@ -963,7 +964,8 @@ var create = function (config) {
 
         best: best,
 
-        lag: 0
+        lag: 0,
+        timeOfLastSuccessfulMessage: 0,
     };
     storeMessage(realtime, zeroMsg);
     if (initMsg) {
@@ -1558,8 +1560,12 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         getLag: function () {
             var isPending = !!realtime.pending;
             var lag = realtime.lag;
-            if (realtime.pending) { lag = +new Date() - realtime.pending.timeSent; }
-            return { pending: isPending, lag: lag };
+            if (realtime.pending) { lag = +new Date() - realtime.timeOfLastSuccessfulMessage; }
+            return {
+                pending: isPending,
+                lag: lag,
+                active: (!realtime.aborted && realtime.syncSchedule !== -2)
+            };
         },
 
         _: undefined
