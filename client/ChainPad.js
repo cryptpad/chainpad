@@ -99,7 +99,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
             realtime.pending = null;
             if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
-            realtime.timeOfLastSuccessfulMessage = +new Date();
+            realtime.timeOfLastSuccess = +new Date();
             realtime.lag = +new Date() - pending.timeSent;
             handleMessage(realtime, strMsg, true);
             pending.callback();
@@ -162,6 +162,7 @@ var sync = function (realtime, timeSent) {
     if (realtime.uncommitted.operations.length === 0) {
         //debug(realtime, "No data to sync to the server, sleeping");
         settle(realtime);
+        realtime.timeOfLastSuccess = +new Date();
         realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         return;
     }
@@ -291,7 +292,7 @@ var create = function (config) {
         best: best,
 
         lag: 0,
-        timeOfLastSuccessfulMessage: 0,
+        timeOfLastSuccess: 0,
     };
     storeMessage(realtime, zeroMsg);
     if (initMsg) {
@@ -887,7 +888,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         getLag: function () {
             var isPending = !!realtime.pending;
             var lag = realtime.lag;
-            if (realtime.pending) { lag = +new Date() - realtime.timeOfLastSuccessfulMessage; }
+            if (realtime.pending) { lag = +new Date() - realtime.timeOfLastSuccess; }
             return {
                 pending: isPending,
                 lag: lag,
