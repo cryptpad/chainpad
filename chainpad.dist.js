@@ -790,6 +790,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
     }, 10000 + (Math.random() * 5000));
 
     if (realtime.pending) { throw new Error("there is already a pending message"); }
+    if (realtime.timeOfLastSuccess === -1) { realtime.timeOfLastSuccess = +new Date(); }
     realtime.pending = {
         hash: msg.hashOf,
         timeSent: timeSent || +new Date(),
@@ -966,7 +967,7 @@ var create = function (config) {
         best: best,
 
         lag: 0,
-        timeOfLastSuccess: 0,
+        timeOfLastSuccess: -1,
     };
     storeMessage(realtime, zeroMsg);
     if (initMsg) {
