@@ -314,4 +314,9 @@ var random = Operation.random = function (docLength /*:number*/) {
     return create(offset, toRemove, toInsert);
 };
 
+var diffText = Operation.diffText = function (stateA /*:string*/, stateB /*:string*/) {
+    var op = create(0, stateA.length, stateB);
+    return simplify(op, stateA);
+};
+
 Object.freeze(module.exports);

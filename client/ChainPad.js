@@ -390,6 +390,7 @@ var parentCount = function (realtime, message) {
 
 var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
+    var newAuthDoc;
     if (isFromMe) {
         // Case 1: We're applying a patch which we originally created (yay our work was accepted)
         //         We will merge the inverse of the patch with our uncommitted work in order that
@@ -406,13 +407,26 @@ var applyPatch = function (realtime, isFromMe, patch) {
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
         // work over their patch in order to preserve intent as much as possible.
-        realtime.uncommitted =
-            Patch.transform(
-                realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
+        realtime.uncommitted = Patch.transform(
+            realtime.uncommitted,
+            patch,
+            realtime.authDoc,
+            realtime.config.transformFunction,
+            realtime.config.patchTransformer
+        );
+        if (realtime.config.validateContent) {
+            newAuthDoc = Patch.apply(patch, realtime.authDoc);
+            var userDoc = Patch.apply(realtime.uncommitted, newAuthDoc);
+            if (!realtime.config.validateContent(userDoc)) {
+                warn(realtime, "Transformed patch is not valid");
+                // big hammer
+                realtime.uncommitted = Patch.create(Sha.hex_sha256(realtime.authDoc));
+            }
+        }
     }
     Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
 
-    realtime.authDoc = Patch.apply(patch, realtime.authDoc);
+    realtime.authDoc = newAuthDoc || Patch.apply(patch, realtime.authDoc);
 
     if (Common.PARANOIA) {
         Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
@@ -790,6 +804,7 @@ var mkConfig = function (config) {
         logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
         noPrune: config.noPrune,
         transformFunction: config.transformFunction || Operation.transform0,
+        patchTransformer: config.patchTransformer,
         userName: config.userName || 'anonymous',
         validateContent: config.validateContent || function () { return true; }
     });
@@ -807,6 +822,7 @@ export type ChainPad_Config_t = {
     operationSimplify?: Operation_Simplify_t,
     logLevel?: number,
     transformFunction?: Operation_Transform_t,
+    patchTransformer?: (state0:string, stateB:string, stateA:string) => string,
     userName?: string,
     validateContent?: (string)=>boolean,
     noPrune?: boolean

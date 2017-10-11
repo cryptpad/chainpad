@@ -40,6 +40,7 @@ export type Patch_t = {
     }
 };
 export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
+export type Patch_Transform_t = (string, string, string) => string
 */
 
 var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
@@ -279,18 +280,12 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform = Patch.transform = function (
+var transform0 = Patch.transform0 = function (
     origToTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
     transformFunction /*:Operation_Transform_t*/ )
 {
-    if (Common.PARANOIA) {
-        check(origToTransform, doc.length);
-        check(transformBy, doc.length);
-        if (Sha.hex_sha256(doc) !== origToTransform.parentHash) { throw new Error("wrong hash"); }
-    }
-    if (origToTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
     var resultOfTransformBy = apply(transformBy, doc);
 
     var toTransform = clone(origToTransform);
@@ -330,6 +325,35 @@ var transform = Patch.transform = function (
         check(out, resultOfTransformBy.length);
     }
     return out;
+};
+
+var transform = Patch.transform = function (
+    toTransform /*:Patch_t*/,
+    transformBy /*:Patch_t*/,
+    doc /*:string*/,
+    transformFunction /*:Operation_Transform_t*/,
+    patchTransformer /*:?Patch_Transform_t*/ )
+{
+    if (Common.PARANOIA) {
+        check(toTransform, doc.length);
+        check(transformBy, doc.length);
+        if (Sha.hex_sha256(doc) !== toTransform.parentHash) { throw new Error("wrong hash"); }
+    }
+    if (toTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
+
+    if (patchTransformer) {
+        var resultOfTransformBy = Patch.apply(transformBy, doc);
+        var resultOfToTransform = Patch.apply(toTransform, doc);
+        var resultOfNewToTransform =
+            patchTransformer(resultOfToTransform, resultOfTransformBy, doc);
+        var out = create(Sha.hex_sha256(resultOfTransformBy));
+        var op = Operation.diffText(resultOfTransformBy, resultOfNewToTransform);
+        if (!op) { throw new Error(); }
+        out.operations.push(op);
+        return out;
+    }
+
+    return transform0(toTransform, transformBy, doc, transformFunction);
 };
 
 var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {

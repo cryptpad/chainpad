@@ -1,7 +1,7 @@
 {
   "name": "chainpad",
   "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
-  "version": "0.4.7",
+  "version": "0.4.8",
   "dependencies": {
     "gluejs": "~2.4.0",
     "xmhell": "~0.1.2",
