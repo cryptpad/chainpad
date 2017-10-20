@@ -99,20 +99,28 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
             realtime.pending = null;
             if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
-            realtime.timeOfLastSuccess = +new Date();
-            realtime.lag = +new Date() - pending.timeSent;
-            handleMessage(realtime, strMsg, true);
+            if (handleMessage(realtime, strMsg, true)) {
+                realtime.timeOfLastSuccess = +new Date();
+                realtime.lag = +new Date() - pending.timeSent;
+            } else {
+                debug(realtime, "Our message [" + msg.hashOf + "] failed validation");
+            }
             pending.callback();
         }
     });
 
     var timeout = schedule(realtime, function () {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
-        if (!realtime.pending) { throw new Error(); }
-        var timeSent = realtime.pending.timeSent;
-        realtime.pending = null;
-        realtime.syncSchedule = -1;
-        sync(realtime, timeSent);
+        var pending = realtime.pending;
+        if (pending) {
+            var timeSent = pending.timeSent;
+            realtime.pending = null;
+            realtime.syncSchedule = -1;
+        }
+        sync(realtime, 0);
+        if (!pending) {
+            throw new Error("INTERNAL ERROR: Message timed out but no realtime.pending");
+        }
     }, 10000 + (Math.random() * 5000));
 
     if (realtime.pending) { throw new Error("there is already a pending message"); }
@@ -531,7 +539,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             pushUIPatch(realtime, fixUserDocPatch);
 
             if (Common.PARANOIA) { realtime.userInterfaceContent = realtime.authDoc; }
-            return;
+            return true;
         } else {
             // we'll probably find the missing parent later.
             debug(realtime, "Patch [" + msg.hashOf + "] not connected to root (parent: [" +
@@ -718,6 +726,8 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
     }
 
     if (Common.PARANOIA) { check(realtime); }
+
+    return true;
 };
 
 var getDepthOfState = function (content, minDepth, realtime) {

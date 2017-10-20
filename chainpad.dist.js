@@ -44,6 +44,7 @@ export type Patch_t = {
     }
 };
 export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
+export type Patch_Transform_t = (string, string, string) => string
 */
 
 var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
@@ -283,18 +284,12 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform = Patch.transform = function (
+var transform0 = Patch.transform0 = function (
     origToTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
     transformFunction /*:Operation_Transform_t*/ )
 {
-    if (Common.PARANOIA) {
-        check(origToTransform, doc.length);
-        check(transformBy, doc.length);
-        if (Sha.hex_sha256(doc) !== origToTransform.parentHash) { throw new Error("wrong hash"); }
-    }
-    if (origToTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
     var resultOfTransformBy = apply(transformBy, doc);
 
     var toTransform = clone(origToTransform);
@@ -334,6 +329,35 @@ var transform = Patch.transform = function (
         check(out, resultOfTransformBy.length);
     }
     return out;
+};
+
+var transform = Patch.transform = function (
+    toTransform /*:Patch_t*/,
+    transformBy /*:Patch_t*/,
+    doc /*:string*/,
+    transformFunction /*:Operation_Transform_t*/,
+    patchTransformer /*:?Patch_Transform_t*/ )
+{
+    if (Common.PARANOIA) {
+        check(toTransform, doc.length);
+        check(transformBy, doc.length);
+        if (Sha.hex_sha256(doc) !== toTransform.parentHash) { throw new Error("wrong hash"); }
+    }
+    if (toTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
+
+    if (patchTransformer) {
+        var resultOfTransformBy = Patch.apply(transformBy, doc);
+        var resultOfToTransform = Patch.apply(toTransform, doc);
+        var resultOfNewToTransform =
+            patchTransformer(resultOfToTransform, resultOfTransformBy, doc);
+        var out = create(Sha.hex_sha256(resultOfTransformBy));
+        var op = Operation.diffText(resultOfTransformBy, resultOfNewToTransform);
+        if (!op) { throw new Error(); }
+        out.operations.push(op);
+        return out;
+    }
+
+    return transform0(toTransform, transformBy, doc, transformFunction);
 };
 
 var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
@@ -773,20 +797,28 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
             realtime.pending = null;
             if (!pending) { throw new Error(); }
             Common.assert(pending.hash === msg.hashOf);
-            realtime.timeOfLastSuccess = +new Date();
-            realtime.lag = +new Date() - pending.timeSent;
-            handleMessage(realtime, strMsg, true);
+            if (handleMessage(realtime, strMsg, true)) {
+                realtime.timeOfLastSuccess = +new Date();
+                realtime.lag = +new Date() - pending.timeSent;
+            } else {
+                debug(realtime, "Our message [" + msg.hashOf + "] failed validation");
+            }
             pending.callback();
         }
     });
 
     var timeout = schedule(realtime, function () {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
-        if (!realtime.pending) { throw new Error(); }
-        var timeSent = realtime.pending.timeSent;
-        realtime.pending = null;
-        realtime.syncSchedule = -1;
-        sync(realtime, timeSent);
+        var pending = realtime.pending;
+        if (pending) {
+            var timeSent = pending.timeSent;
+            realtime.pending = null;
+            realtime.syncSchedule = -1;
+        }
+        sync(realtime, 0);
+        if (!pending) {
+            throw new Error("INTERNAL ERROR: Message timed out but no realtime.pending");
+        }
     }, 10000 + (Math.random() * 5000));
 
     if (realtime.pending) { throw new Error("there is already a pending message"); }
@@ -1064,6 +1096,7 @@ var parentCount = function (realtime, message) {
 
 var applyPatch = function (realtime, isFromMe, patch) {
     Common.assert(patch);
+    var newAuthDoc;
     if (isFromMe) {
         // Case 1: We're applying a patch which we originally created (yay our work was accepted)
         //         We will merge the inverse of the patch with our uncommitted work in order that
@@ -1080,13 +1113,26 @@ var applyPatch = function (realtime, isFromMe, patch) {
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
         // work over their patch in order to preserve intent as much as possible.
-        realtime.uncommitted =
-            Patch.transform(
-                realtime.uncommitted, patch, realtime.authDoc, realtime.config.transformFunction);
+        realtime.uncommitted = Patch.transform(
+            realtime.uncommitted,
+            patch,
+            realtime.authDoc,
+            realtime.config.transformFunction,
+            realtime.config.patchTransformer
+        );
+        if (realtime.config.validateContent) {
+            newAuthDoc = Patch.apply(patch, realtime.authDoc);
+            var userDoc = Patch.apply(realtime.uncommitted, newAuthDoc);
+            if (!realtime.config.validateContent(userDoc)) {
+                warn(realtime, "Transformed patch is not valid");
+                // big hammer
+                realtime.uncommitted = Patch.create(Sha.hex_sha256(realtime.authDoc));
+            }
+        }
     }
     Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
 
-    realtime.authDoc = Patch.apply(patch, realtime.authDoc);
+    realtime.authDoc = newAuthDoc || Patch.apply(patch, realtime.authDoc);
 
     if (Common.PARANOIA) {
         Common.assert(realtime.uncommitted.parentHash === inversePatch(patch).parentHash);
@@ -1191,7 +1237,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             pushUIPatch(realtime, fixUserDocPatch);
 
             if (Common.PARANOIA) { realtime.userInterfaceContent = realtime.authDoc; }
-            return;
+            return true;
         } else {
             // we'll probably find the missing parent later.
             debug(realtime, "Patch [" + msg.hashOf + "] not connected to root (parent: [" +
@@ -1378,6 +1424,8 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
     }
 
     if (Common.PARANOIA) { check(realtime); }
+
+    return true;
 };
 
 var getDepthOfState = function (content, minDepth, realtime) {
@@ -1464,6 +1512,7 @@ var mkConfig = function (config) {
         logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
         noPrune: config.noPrune,
         transformFunction: config.transformFunction || Operation.transform0,
+        patchTransformer: config.patchTransformer,
         userName: config.userName || 'anonymous',
         validateContent: config.validateContent || function () { return true; }
     });
@@ -1481,6 +1530,7 @@ export type ChainPad_Config_t = {
     operationSimplify?: Operation_Simplify_t,
     logLevel?: number,
     transformFunction?: Operation_Transform_t,
+    patchTransformer?: (state0:string, stateB:string, stateA:string) => string,
     userName?: string,
     validateContent?: (string)=>boolean,
     noPrune?: boolean
@@ -1897,6 +1947,11 @@ var random = Operation.random = function (docLength /*:number*/) {
         toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
+};
+
+var diffText = Operation.diffText = function (stateA /*:string*/, stateB /*:string*/) {
+    var op = create(0, stateA.length, stateB);
+    return simplify(op, stateA);
 };
 
 Object.freeze(module.exports);
