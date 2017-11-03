@@ -332,7 +332,8 @@ var transform = Patch.transform = function (
     transformBy /*:Patch_t*/,
     doc /*:string*/,
     transformFunction /*:Operation_Transform_t*/,
-    patchTransformer /*:?Patch_Transform_t*/ )
+    patchTransformer /*:?Patch_Transform_t*/,
+    diffFunction /*:?(string, string)=>Array<Operation_t>*/ )
 {
     if (Common.PARANOIA) {
         check(toTransform, doc.length);
@@ -346,18 +347,14 @@ var transform = Patch.transform = function (
         return create(Sha.hex_sha256(Patch.apply(transformBy, doc)));
     }
 
-    if (patchTransformer) {
-        console.log(toTransform);
-        console.log(transformBy);
+    if (patchTransformer && diffFunction) {
         var resultOfToTransform = Patch.apply(toTransform, doc);
         var resultOfTransformBy = Patch.apply(transformBy, doc);
         var resultOfNewToTransform =
             patchTransformer(resultOfToTransform, resultOfTransformBy, doc);
         var out = create(Sha.hex_sha256(resultOfTransformBy));
-        var op = Operation.diffText(resultOfTransformBy, resultOfNewToTransform);
-        console.log(op);
-        console.log(resultOfTransformBy === resultOfNewToTransform);
-        if (op) { out.operations.push(op); }
+        var ops = diffFunction(resultOfTransformBy, resultOfNewToTransform);
+        Array.prototype.push.apply(out.operations, ops);
         return out;
     }
 

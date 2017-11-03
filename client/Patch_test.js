@@ -299,6 +299,7 @@ var transform2 = function (cb) {
         O,
         function (text, toTransform, transformBy) {
             var result = Operation.transform0(text, toTransform, transformBy);
+            if (!result) { throw new Error(); }
             var resultTest = Operation.apply(result, text);
             JSON.parse(resultTest);
             return result;

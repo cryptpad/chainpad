@@ -21,6 +21,7 @@ var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./sha256');
+var Diff = module.exports.Diff = require('./Diff');
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -420,7 +421,8 @@ var applyPatch = function (realtime, isFromMe, patch) {
             patch,
             realtime.authDoc,
             realtime.config.transformFunction,
-            realtime.config.patchTransformer
+            realtime.config.patchTransformer,
+            realtime.config.diffFunction
         );
         if (realtime.config.validateContent) {
             newAuthDoc = Patch.apply(patch, realtime.authDoc);
@@ -816,13 +818,16 @@ var mkConfig = function (config) {
         transformFunction: config.transformFunction || Operation.transform0,
         patchTransformer: config.patchTransformer,
         userName: config.userName || 'anonymous',
-        validateContent: config.validateContent || function () { return true; }
+        validateContent: config.validateContent || function () { return true; },
+        diffFunction: config.diffFunction ||
+            function (strA, strB) { return Diff.diff(strA, strB, config.diffBlockSize); },
     });
 };
 
 /*::
 import type { Operation_Transform_t } from './Operation';
 import type { Operation_Simplify_t } from './Operation';
+import type { Operation_t } from './Operation';
 import type { Patch_t } from './Patch';
 export type ChainPad_Config_t = {
     initialState?: string,
@@ -835,7 +840,9 @@ export type ChainPad_Config_t = {
     patchTransformer?: (state0:string, stateB:string, stateA:string) => string,
     userName?: string,
     validateContent?: (string)=>boolean,
-    noPrune?: boolean
+    noPrune?: boolean,
+    diffFunction?: (string, string)=>Array<Operation_t>,
+    diffBlockSize?: number
 };
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
@@ -863,6 +870,12 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         change: function (offset /*:number*/, count /*:number*/, chars /*:string*/) {
             if (count === 0 && chars === '') { return; }
             doOperation(realtime, Operation.create(offset, count, chars));
+        },
+
+        contentUpdate: function (newContent /*:string*/) {
+            var ops = realtime.config.diffFunction(realtime.authDoc, newContent);
+            var uncommitted = Patch.create(realtime.uncommitted.parentHash);
+            Array.prototype.push.apply(uncommitted.operations, ops);
         },
 
         onMessage: function (handler /*:(string, ()=>void)=>void*/) {

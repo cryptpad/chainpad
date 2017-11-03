@@ -125,11 +125,11 @@ var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string
     var opToInsert = op.toInsert.substring(i);
     var ropToInsert = rop.toInsert.substring(i);
 
-    if (ropToInsert.length === opToInsert.length) {
-        for (i = ropToInsert.length-1; i >= 0 && ropToInsert[i] === opToInsert[i]; i--) ;
-        opToInsert = opToInsert.substring(0, i+1);
-        opToRemove = i+1;
-    }
+    var j;
+    for (i = ropToInsert.length - 1, j = opToInsert.length - 1; i >= 0 && j >= 0 &&
+        ropToInsert.charAt(i) === opToInsert.charAt(j); i--, j--) ;
+    opToInsert = opToInsert.substring(0, j + 1);
+    opToRemove = i + 1;
 
     if (opToRemove === 0 && opToInsert.length === 0) { return null; }
     return create(opOffset, opToRemove, opToInsert);
@@ -312,11 +312,6 @@ var random = Operation.random = function (docLength /*:number*/) {
         toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
-};
-
-var diffText = Operation.diffText = function (stateA /*:string*/, stateB /*:string*/) {
-    var op = create(0, stateA.length, stateB);
-    return simplify(op, stateA);
 };
 
 Object.freeze(module.exports);
