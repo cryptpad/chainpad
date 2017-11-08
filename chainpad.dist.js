@@ -44,7 +44,11 @@ export type Patch_t = {
     }
 };
 export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
-export type Patch_Transform_t = (string, string, string) => string
+export type Patch_Transform_t = (
+    toTransform:Array<Operation_t>,
+    transformBy:Array<Operation_t>,
+    state0:string
+) => Array<Operation_t>;
 */
 
 var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
@@ -284,59 +288,11 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform0 = Patch.transform0 = function (
-    origToTransform /*:Patch_t*/,
-    transformBy /*:Patch_t*/,
-    doc /*:string*/,
-    transformFunction /*:Operation_Transform_t*/ )
-{
-    var resultOfTransformBy = apply(transformBy, doc);
-
-    var toTransform = clone(origToTransform);
-    var text = doc;
-    var out = create(transformBy.mut.inverseOf
-        ? transformBy.mut.inverseOf.parentHash
-        : Sha.hex_sha256(resultOfTransformBy));
-    for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        var tti = toTransform.operations[i];
-        if (isCheckpointOp(tti, text)) { continue; }
-        for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
-            if (Common.DEBUG) {
-                console.log(
-                    ['TRANSFORM', text, tti, transformBy.operations[j]]
-                );
-            }
-            try {
-                tti = Operation.transform(text, tti, transformBy.operations[j], transformFunction);
-            } catch (e) {
-                console.error("The pluggable transform function threw an error, " +
-                    "failing operational transformation");
-                console.error(e.stack);
-                return create(Sha.hex_sha256(resultOfTransformBy));
-            }
-            if (!tti) {
-                break;
-            }
-        }
-        if (tti) {
-            if (Common.PARANOIA) { Operation.check(tti, resultOfTransformBy.length); }
-            addOperation(out, tti);
-        }
-    }
-
-    if (Common.PARANOIA) {
-        check(out, resultOfTransformBy.length);
-    }
-    return out;
-};
-
 var transform = Patch.transform = function (
     toTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
-    transformFunction /*:Operation_Transform_t*/,
-    patchTransformer /*:?Patch_Transform_t*/ )
+    patchTransformer /*:Patch_Transform_t*/ )
 {
     if (Common.PARANOIA) {
         check(toTransform, doc.length);
@@ -345,27 +301,40 @@ var transform = Patch.transform = function (
     }
     if (toTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
 
+    var afterTransformBy = Patch.apply(transformBy, doc);
+    var out = create(transformBy.mut.inverseOf
+        ? transformBy.mut.inverseOf.parentHash
+        : Sha.hex_sha256(afterTransformBy),
+        toTransform.isCheckpoint
+    );
+
     if (transformBy.operations.length === 0) { return clone(toTransform); }
     if (toTransform.operations.length === 0) {
-        return create(Sha.hex_sha256(Patch.apply(transformBy, doc)));
-    }
-
-    if (patchTransformer) {
-        console.log(toTransform);
-        console.log(transformBy);
-        var resultOfToTransform = Patch.apply(toTransform, doc);
-        var resultOfTransformBy = Patch.apply(transformBy, doc);
-        var resultOfNewToTransform =
-            patchTransformer(resultOfToTransform, resultOfTransformBy, doc);
-        var out = create(Sha.hex_sha256(resultOfTransformBy));
-        var op = Operation.diffText(resultOfTransformBy, resultOfNewToTransform);
-        console.log(op);
-        console.log(resultOfTransformBy === resultOfNewToTransform);
-        if (op) { out.operations.push(op); }
+        if (toTransform.isCheckpoint) { throw new Error(); }
         return out;
     }
 
-    return transform0(toTransform, transformBy, doc, transformFunction);
+    if (toTransform.isCheckpoint ||
+        (toTransform.operations.length === 1 && isCheckpointOp(toTransform.operations[0], doc)))
+    {
+        throw new Error("Attempting to transform a checkpoint, this should not happen");
+    }
+
+    if (transformBy.operations.length === 1 && isCheckpointOp(transformBy.operations[0], doc)) {
+        if (!transformBy.isCheckpoint) { throw new Error(); }
+        return toTransform;
+    }
+
+    if (transformBy.isCheckpoint) { throw new Error(); }
+
+    var ops = patchTransformer(toTransform.operations, transformBy.operations, doc);
+    Array.prototype.push.apply(out.operations, ops);
+
+    if (Common.PARANOIA) {
+        check(out, afterTransformBy.length);
+    }
+
+    return out;
 };
 
 var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
@@ -727,6 +696,10 @@ var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./sha256');
+var Diff = module.exports.Diff = require('./Diff');
+var TextTransformer = module.exports.TextTransformer = require('./transform/TextTransformer');
+var NaiveJSONTransformer = module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
+var SmartJSONTransformer = module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -1121,13 +1094,15 @@ var applyPatch = function (realtime, isFromMe, patch) {
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
         // work over their patch in order to preserve intent as much as possible.
+        //debug(realtime, "Transforming patch " + JSON.stringify(realtime.uncommitted.operations));
         realtime.uncommitted = Patch.transform(
             realtime.uncommitted,
             patch,
             realtime.authDoc,
-            realtime.config.transformFunction,
             realtime.config.patchTransformer
         );
+        //debug(realtime, "By " + JSON.stringify(patch.operations) +
+          //  "\nResult " + JSON.stringify(realtime.uncommitted.operations));
         if (realtime.config.validateContent) {
             newAuthDoc = Patch.apply(patch, realtime.authDoc);
             var userDoc = Patch.apply(realtime.uncommitted, newAuthDoc);
@@ -1207,6 +1182,12 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             // We got the initial state patch, channel already has a pad, no need to send it.
             realtime.setContentPatch = null;
         } else {
+            if (msg.content.isCheckpoint) {
+                debug(realtime, "[" +
+                    (isFromMe ? "our" : "their") +
+                        "] Checkpoint [" + msg.hashOf + "] is already known");
+                return true;
+            }
             debug(realtime, "Patch [" + msg.hashOf + "] is already known");
         }
         if (Common.PARANOIA) { check(realtime); }
@@ -1282,7 +1263,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             debug(realtime, "Patch [" + msg.hashOf + "] chain is [" + pcMsg + "] best chain is [" +
                 pcBest + "]");
             if (Common.PARANOIA) { check(realtime); }
-            return;
+            return true;
         }
     }
 
@@ -1510,6 +1491,9 @@ var wrapMessage = function (realtime, msg) {
 
 var mkConfig = function (config) {
     config = config || {};
+    if (config.transformFunction) {
+        throw new Error("chainpad config transformFunction is nolonger used");
+    }
     return Object.freeze({
         initialState: config.initialState || '',
         checkpointInterval: config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL,
@@ -1519,17 +1503,20 @@ var mkConfig = function (config) {
         operationSimplify: config.operationSimplify || Operation.simplify,
         logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
         noPrune: config.noPrune,
-        transformFunction: config.transformFunction || Operation.transform0,
-        patchTransformer: config.patchTransformer,
+        patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
-        validateContent: config.validateContent || function () { return true; }
+        validateContent: config.validateContent || function () { return true; },
+        diffFunction: config.diffFunction ||
+            function (strA, strB) { return Diff.diff(strA, strB, config.diffBlockSize); },
     });
 };
 
 /*::
 import type { Operation_Transform_t } from './Operation';
 import type { Operation_Simplify_t } from './Operation';
+import type { Operation_t } from './Operation';
 import type { Patch_t } from './Patch';
+import type { Patch_Transform_t } from './Patch';
 export type ChainPad_Config_t = {
     initialState?: string,
     checkpointInterval?: number,
@@ -1537,11 +1524,12 @@ export type ChainPad_Config_t = {
     strictCheckpointValidation?: boolean,
     operationSimplify?: Operation_Simplify_t,
     logLevel?: number,
-    transformFunction?: Operation_Transform_t,
-    patchTransformer?: (state0:string, stateB:string, stateA:string) => string,
+    patchTransformer?: Patch_Transform_t,
     userName?: string,
     validateContent?: (string)=>boolean,
-    noPrune?: boolean
+    noPrune?: boolean,
+    diffFunction?: (string, string)=>Array<Operation_t>,
+    diffBlockSize?: number
 };
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
@@ -1569,6 +1557,12 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         change: function (offset /*:number*/, count /*:number*/, chars /*:string*/) {
             if (count === 0 && chars === '') { return; }
             doOperation(realtime, Operation.create(offset, count, chars));
+        },
+
+        contentUpdate: function (newContent /*:string*/) {
+            var ops = realtime.config.diffFunction(realtime.authDoc, newContent);
+            var uncommitted = Patch.create(realtime.uncommitted.parentHash);
+            Array.prototype.push.apply(uncommitted.operations, ops);
         },
 
         onMessage: function (handler /*:(string, ()=>void)=>void*/) {
@@ -1724,6 +1718,12 @@ var apply = Operation.apply = function (op /*:Operation_t*/, doc /*:string*/)
     return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
+var applyMulti = Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
+{
+    for (var i = ops.length - 1; i >= 0; i--) { doc = apply(ops[i], doc); }
+    return doc;
+};
+
 var invert = Operation.invert = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
@@ -1768,11 +1768,11 @@ var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string
     var opToInsert = op.toInsert.substring(i);
     var ropToInsert = rop.toInsert.substring(i);
 
-    if (ropToInsert.length === opToInsert.length) {
-        for (i = ropToInsert.length-1; i >= 0 && ropToInsert[i] === opToInsert[i]; i--) ;
-        opToInsert = opToInsert.substring(0, i+1);
-        opToRemove = i+1;
-    }
+    var j;
+    for (i = ropToInsert.length - 1, j = opToInsert.length - 1; i >= 0 && j >= 0 &&
+        ropToInsert.charAt(i) === opToInsert.charAt(j); i--, j--) ;
+    opToInsert = opToInsert.substring(0, j + 1);
+    opToRemove = i + 1;
 
     if (opToRemove === 0 && opToInsert.length === 0) { return null; }
     return create(opOffset, opToRemove, opToInsert);
@@ -1884,67 +1884,6 @@ var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Opera
     );
 };
 
-/**
- * this is a lossy and dirty algorithm, everything else is nice but transformation
- * has to be lossy because both operations have the same base and they diverge.
- * This could be made nicer and/or tailored to a specific data type.
- *
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which also has the same base.
- * @return toTransform *or* null if the result is a no-op.
- */
-var transform0 = Operation.transform0 = function (
-    text /*:string*/,
-    toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/)
-{
-    if (toTransform.offset > transformBy.offset) {
-        if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
-            // simple rebase
-            return create(
-                toTransform.offset - transformBy.toRemove + transformBy.toInsert.length,
-                toTransform.toRemove,
-                toTransform.toInsert
-            );
-        }
-        var newToRemove =
-            toTransform.toRemove - (transformBy.offset + transformBy.toRemove - toTransform.offset);
-        if (newToRemove < 0) { newToRemove = 0; }
-        if (newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
-        return create(
-            transformBy.offset + transformBy.toInsert.length,
-            newToRemove,
-            toTransform.toInsert
-        );
-    }
-    // they don't touch, yay
-    if (toTransform.offset + toTransform.toRemove < transformBy.offset) { return toTransform; }
-    // Truncate what will be deleted...
-    var _newToRemove = transformBy.offset - toTransform.offset;
-    if (_newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
-    return create(toTransform.offset, _newToRemove, toTransform.toInsert);
-};
-
-/**
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which also has the same base.
- * @return a modified clone of toTransform *or* toTransform itself if no change was made.
- */
-var transform = Operation.transform = function (
-    text /*:string*/,
-    toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    transformFunction /*:Operation_Transform_t*/)
-{
-    if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
-    }
-    var result = transformFunction(text, toTransform, transformBy);
-    if (Common.PARANOIA && result) { check(result); }
-    return result;
-};
-
 /** Used for testing. */
 var random = Operation.random = function (docLength /*:number*/) {
     Common.assert(Common.isUint(docLength));
@@ -1955,11 +1894,6 @@ var random = Operation.random = function (docLength /*:number*/) {
         toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
-};
-
-var diffText = Operation.diffText = function (stateA /*:string*/, stateB /*:string*/) {
-    var op = create(0, stateA.length, stateB);
-    return simplify(op, stateA);
 };
 
 Object.freeze(module.exports);
