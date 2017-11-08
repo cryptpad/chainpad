@@ -88,9 +88,10 @@ var fuzz = function (cycles, callback) {
         var doc = Common.randomASCII(Math.random() * 9000 + 1000);
         var hash = Sha.hex_sha256(doc);
         for (var j = 0; j < cycles; j++) {
-            fuzzCycle(doc, hash, callback);
+            fuzzCycle(doc, hash);
         }
     }
+    callback();
 };
 
 var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {

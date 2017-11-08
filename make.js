@@ -29,6 +29,7 @@ var Os = require('os');
     g.include('./Common.js');
     g.include('./Patch.js');
     g.include('./Operation.js');
+    g.include('./TextTransformer.js');
     g.include('./sha256.js');
     g.include('./sha256/exports.js');
     g.include('./sha256/hash.js');
@@ -52,20 +53,22 @@ var timeOne = new Date().getTime();
 
 nThen(function (waitFor) {
     var nt = nThen;
-    Fs.readdir('./client/', waitFor(function (err, ret) {
-        if (err) { throw err; }
-        ret.forEach(function (file) {
-           if (/_test\.js$/.test(file)) {
-               nt = nt(function (waitFor) {
-                   tests.push(file);
-                   var test = require('./client/' + file);
-                   console.log("Running Test " + file);
-                   test.main(cycles, waitFor());
-               }).nThen;
-           }
-        });
-        nt(waitFor());
-    }));
+    ['./client/', './client/transform/'].forEach(function (path) {
+        Fs.readdir(path, waitFor(function (err, ret) {
+            if (err) { throw err; }
+            ret.forEach(function (file) {
+               if (/_test\.js$/.test(file)) {
+                   nt = nt(function (waitFor) {
+                       tests.push(file);
+                       var test = require(path + file);
+                       console.log("Running Test " + file);
+                       test.main(cycles, waitFor());
+                   }).nThen;
+               }
+            });
+            nt(waitFor());
+        }));
+    });
 }).nThen(function (waitFor) {
     console.log("Tests passed.");
     console.log('in ' + (new Date().getTime() - timeOne));

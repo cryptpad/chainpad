@@ -81,6 +81,12 @@ var apply = Operation.apply = function (op /*:Operation_t*/, doc /*:string*/)
     return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
+var applyMulti = Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
+{
+    for (var i = ops.length - 1; i >= 0; i--) { doc = apply(ops[i], doc); }
+    return doc;
+};
+
 var invert = Operation.invert = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
@@ -239,67 +245,6 @@ var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Opera
         newOp.toRemove,
         newOp.toInsert
     );
-};
-
-/**
- * this is a lossy and dirty algorithm, everything else is nice but transformation
- * has to be lossy because both operations have the same base and they diverge.
- * This could be made nicer and/or tailored to a specific data type.
- *
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which also has the same base.
- * @return toTransform *or* null if the result is a no-op.
- */
-var transform0 = Operation.transform0 = function (
-    text /*:string*/,
-    toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/)
-{
-    if (toTransform.offset > transformBy.offset) {
-        if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
-            // simple rebase
-            return create(
-                toTransform.offset - transformBy.toRemove + transformBy.toInsert.length,
-                toTransform.toRemove,
-                toTransform.toInsert
-            );
-        }
-        var newToRemove =
-            toTransform.toRemove - (transformBy.offset + transformBy.toRemove - toTransform.offset);
-        if (newToRemove < 0) { newToRemove = 0; }
-        if (newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
-        return create(
-            transformBy.offset + transformBy.toInsert.length,
-            newToRemove,
-            toTransform.toInsert
-        );
-    }
-    // they don't touch, yay
-    if (toTransform.offset + toTransform.toRemove < transformBy.offset) { return toTransform; }
-    // Truncate what will be deleted...
-    var _newToRemove = transformBy.offset - toTransform.offset;
-    if (_newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
-    return create(toTransform.offset, _newToRemove, toTransform.toInsert);
-};
-
-/**
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which also has the same base.
- * @return a modified clone of toTransform *or* toTransform itself if no change was made.
- */
-var transform = Operation.transform = function (
-    text /*:string*/,
-    toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    transformFunction /*:Operation_Transform_t*/)
-{
-    if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
-    }
-    var result = transformFunction(text, toTransform, transformBy);
-    if (Common.PARANOIA && result) { check(result); }
-    return result;
 };
 
 /** Used for testing. */

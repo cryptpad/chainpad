@@ -19,6 +19,10 @@
 
 var Operation = require('./Operation');
 
+/*::
+import type { Operation_t } from './Operation';
+*/
+
 var DEFAULT_BLOCKSIZE = module.exports.DEFAULT_BLOCKSIZE = 8;
 
 var hashScan = function (str, blockSize) {
@@ -128,18 +132,23 @@ var matchesToOps = function (oldS, newS, matches) {
 
 var getCommonBeginning = function (oldS, newS) {
     var commonStart = 0;
-    while (oldS.charAt(commonStart) === newS.charAt(commonStart)) { commonStart++; }
+    var limit = oldS.length < newS.length ? oldS.length : newS.length;
+    while (oldS.charAt(commonStart) === newS.charAt(commonStart) && commonStart < limit) {
+        commonStart++;
+    }
     return { newIndex: 0, oldIndex: 0, length: commonStart };
 };
 
-var getCommonEnd = function (oldS, newS) {
+var getCommonEnd = function (oldS, newS, commonBeginning) {
     var oldEnd = oldS.length - 1;
     var newEnd = newS.length - 1;
+    var limit = Math.min(oldEnd, newEnd) - commonBeginning;
     var commonEnd = 0;
-    while (oldS.charAt(oldEnd) === newS.charAt(newEnd)) {
+    while (oldS.charAt(oldEnd) === newS.charAt(newEnd) && limit >= 0) {
         oldEnd--;
         newEnd--;
         commonEnd++;
+        limit--;
     }
     return { newIndex: newEnd + 1, oldIndex: oldEnd + 1, length: commonEnd };
 };
@@ -147,28 +156,30 @@ var getCommonEnd = function (oldS, newS) {
 var diff = module.exports.diff = function (
     oldS /*:string*/,
     newS /*:string*/,
-    blockSize /*:?number*/)
+    blockSize /*:?number*/ ) /*:Array<Operation_t>*/
 {
     blockSize = blockSize || DEFAULT_BLOCKSIZE;
     var cb = getCommonBeginning(oldS, newS);
     if (cb.length === oldS.length && oldS.length === newS.length) { return []; }
-    var ce = getCommonEnd(oldS, newS);
+    var ce = getCommonEnd(oldS, newS, cb.length);
     var oldST = oldS;
     var newST = newS;
     if (ce.length) {
-        oldST = oldST.slice(0, ce.oldIndex);
-        newST = newST.slice(0, ce.newIndex);
+        oldST = oldST.slice(0, ce.oldIndex+1);
+        newST = newST.slice(0, ce.newIndex+1);
     }
     if (cb.length) {
         oldST = oldST.slice(cb.length);
         newST = newST.slice(cb.length);
     }
     var matches = resolve(newST, hashScan(oldST, blockSize), blockSize);
-    for (var i = 0; i < matches.length; i++) {
-        matches[i].oldIndex += cb.length;
-        matches[i].newIndex += cb.length;
+    if (cb.length) {
+        for (var i = 0; i < matches.length; i++) {
+            matches[i].oldIndex += cb.length;
+            matches[i].newIndex += cb.length;
+        }
+        matches.push(cb);
     }
-    if (cb.length) { matches.push(cb); }
     if (ce.length) { matches.push(ce); }
     return matchesToOps(oldS, newS, reduceMatches(matches));
 };

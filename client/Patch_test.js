@@ -21,6 +21,8 @@ var Operation = require('./Operation');
 var Patch = require('./Patch');
 var Sha = require('./sha256');
 var nThen = require('nthen');
+var ChainPad = require('./ChainPad');
+var TextTransformer = require('./transform/TextTransformer');
 
 // These are fuzz tests so increasing this number might catch more errors.
 var OPERATIONS = 1000;
@@ -133,7 +135,7 @@ var transformStatic = function () {
       convert(p1),
       "_VMsPV\\PNXjQiEoTdoUHYxZALnDjB]onfiN[dBP[vqeGJJZ\\vNaQ`\\Y_jHNnrHOoFN^UWrWjCKoKe" +
           "D[`nosFrM`EpY\\Ib",
-      Operation.transform0
+      TextTransformer
     );
 
     var p2 = [
@@ -141,7 +143,7 @@ var transformStatic = function () {
         [ [ 10, 5, "" ] ]
     ];
 
-    Patch.transform(convert(p2), convert(p2), "SofyheYQWsva[NLAGkB", Operation.transform0);
+    Patch.transform(convert(p2), convert(p2), "SofyheYQWsva[NLAGkB", TextTransformer);
 };
 
 var transform = function (cycles, callback) {
@@ -150,7 +152,7 @@ var transform = function (cycles, callback) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 100)+1);
         var patchAB = Patch.random(docA);
         var patchAC = Patch.random(docA);
-        var patchBC = Patch.transform(patchAC, patchAB, docA, Operation.transform0);
+        var patchBC = Patch.transform(patchAC, patchAB, docA, TextTransformer);
         var docB = Patch.apply(patchAB, docA);
         Patch.apply(patchBC, docB);
     }
@@ -170,146 +172,6 @@ var simplify = function (cycles, callback) {
     callback();
 };
 
-var transform2 = function (cb) {
-    var O = "[\"BODY\",{\"class\":\"cke_editable cke_editable_themed cke_contents_" +
-        "ltr cke_show_borders\",\"contenteditable\":\"true\",\"spellcheck\":\"fal" +
-        "se\"},[[\"P\",{},[\" The quick red fox jumps over the lazy brown dog" +
-        ". The quick red fox jumps over 2 people typing on the same line " +
-        "at the same time. here ?\",[\"BR\",{},[]]]],[\"P\",{},[\"imtypingve th" +
-        "is is a testroverneu sjnn this is a tes\",[\"BR\",{},[]]]],[\"P\",{}," +
-        "[\"Let me put my cursor in front of yours....\"]],[\"P\",{},[\"typewi" +
-        "hhyubf.sihiuhubmnbubihf.joktype behind me on the same line\",[\"BR" +
-        "\",{},[]]]],[\"P\",{},[\"iinininiivrvjkni;nin;iniooooooooooooooonnnn" +
-        "nnnnnnnnnnfrwoinfiwnugnkxuffwop  fihirhgoxhg...eejrngvkxxxxxxxxf" +
-        "ijgbjbokw,dmgbofssfiogohxxx:)  here this is a test this is a tes" +
-        "t this is a test hmm it to mostly work. I don't see any corsor  " +
-        "jung seems\",[\"BR\",{},[]]]],[\"P\",{},[\"This is a test\",[\"BR\",{},[]" +
-        "]]],[\"P\",{},[\"The quick red fox jumps over the lazy hello world " +
-        "this is a test brown dog. The quick ryrown dog. The quick red fo" +
-        "x jumps over the lazy brown dog. The quick red fox jumps over th" +
-        "e lazy brown dog. The quick red  bezdaver te lh ps ofoumx j this" +
-        " is a tstThThTh\",[\"BR\",{},[]]]],[\"P\",{},[\"The quick red fox jump" +
-        "s over the lazy brown dog. The quic The quick red fox jumps over" +
-        " the lazy lazy browo The quick red fox jumps over the lazy brown" +
-        " dog. The quick red fox jumps over the lazy brown dog. The quick" +
-        " red fox jumps over the lazy brown dog. The quick red fox jumps " +
-        "over the lazy brown dog. The quick red fox jumps over the lazy b" +
-        "rown dog. The quick red fox jumps over the lazy brown dog. The q" +
-        "uick red fox jumps over the lazy brown dog. The quick red fox ju" +
-        "mps over the lazg brown dog. The quick red fox jumps over the la" +
-        "zy brown dog. The.quick red fox jumps over the lazy brown dog. T" +
-        "he quick red fox jumps over the lazy brown dog. The quick red fo" +
-        "x jumps over the lazy brown dog.nTh  quick red fox jumps over th" +
-        "e lazy brown dog. The quick red passing trains that have no name" +
-        ", switchyards full of old black men and graveyards full of ruste" +
-        "d automobiles. this is a test hello world this is a est, test te" +
-        "st test, yes this is a test. Riding on the city of new orleans, " +
-        "illinois central, monday morning rail. fifteen cars and fifteen " +
-        "restless riders, three conductors and twenty four sacks of mail." +
-        " All along the southbound oddessy the train pulls out of kankeke" +
-        "e and moves along past houses, farms and fields Happy days. \",[\"" +
-        "BR\",{},[]]]],[\"P\",{},[\"This is a test\"]],[\"P\",{},[[\"BR\",{},[]]]]" +
-        ",[\"P\",{},[\" The quick red fox jumps over the lazy brown dog. The" +
-        " quick red fox jumps over the lazy brown dog. The quick red fox " +
-        "jumps over the lazy brown dog. The quick red fox jumps over the " +
-        "lazy brown dog. The quick red fox jumps over the lazy brown dog." +
-        " The quick red fox jumps ovethis isazy brown dog. The quick red " +
-        "fox jumps over the lazy brown dog. The quick red fox jumps over " +
-        "the lazy brown dog. The quick red fox jumps over the lazy brown " +
-        "do a test hello world this is a test hello this is a test world " +
-        "hello this i test The quick red fox jumps over the lazy brown do" +
-        "g. The quick red fox jumps over the lazy brown dog. The quick re" +
-        "d fox jumps over the lazy brown dog. The quick red fox jumps ove" +
-        "r the lazy brown dog. The quick red fox jumps over the lazy brow" +
-        "n dog. The quick red fox jumps ovethis is a test hello world thi" +
-        "s is a test hello this is a test world hello this i The quick re" +
-        "d fox jumps over the lazy brown dog. The quick red fox jumps ove" +
-        "r the lazy brown dog. The quick red fox jumps over the lazy brow" +
-        "n dog. The quick red fox jumps over the lazy brown dog. The quic" +
-        "k red fox jumps over the lazy brown dog. The quick red fox jumps" +
-        " over ththis is a test hello world this is a test hello this is " +
-        "a  The quick red fox jumps over the lazy brown dog. The quick re" +
-        "d fox jumps over the lazy brown dog. The quick red fox jumps ove" +
-        "r the lazy brown test The quick red fox jumps over the la world " +
-        "the quick brown fox jumped over the lazy do The quick red fox ju" +
-        "mps over the lazy brown dog. The quick red fox jumps over the la" +
-        "zy brown dog. The quick red fox jumps over the lazy brown dog. T" +
-        "he quick red fox jumps over the lazy brown dog. The quick red fo" +
-        "x jumps over the lazy brown dog. The quick red fox jumps ovethis" +
-        " isazy brown dog. The quick red fox jumps over the lazy brown do" +
-        "g. The quick red fox jumps over the lazy brown dog. The quick re" +
-        "d fox jumps over the lazy brown do a test hello world this is a " +
-        "test hello this is a test world hello this i test The quick red " +
-        "fox jumps over the lazy brown dog. The quick red fox jumps over " +
-        "the lazy brown dog. The quick red fox jumps over the lazy brown " +
-        "dog. The quick red fox jumps over the lazy brown dog. The quick " +
-        "red fox jumps over the lazy brown dog. The quick red fox jumps o" +
-        "vethis is a test hello world this is a test hello this is a test" +
-        " world hello this i The quick red fox jumps over the lazy brown " +
-        "dog. The quick red fox jumps over the lazy brown dog. The quick " +
-        "red fox jumps over the lazy brown dog. The quick red fox jumps o" +
-        "ver the lazy brown dog. The quick red fox jumps over the lazy br" +
-        "own dog. The quick red fox jumps over ththis is a test hello wor" +
-        "ld this is a test hello this is a  The quick red fox jumps over " +
-        "the lazy brown dog. The quick red fox jumps over the lazy brown " +
-        "dog. The quick red fox jumps over the lazy brown dog.test world " +
-        "the quick brown fox jumped over the lazy dog- hello this is test" +
-        " hello world hello world this i s atest this is a test the quick" +
-        " brown fox jumped over the lazy dog\",[\"BR\",{},[]]]],[\"P\",{},[[\"B" +
-        "R\",{},[]]]],[\"P\",{},[\" The quick red fox jumps oveThise lazy bro" +
-        "wn dog. The quick red fox jumps over the l is brown dog. The qui" +
-        "ck red fox jumps over the lazy brown dog. The quick red The qui " +
-        "The quick red fox jumps oveThise lazy brown dog. The quick red f" +
-        "ox jumps over the lazy  is The quick red fox jumps over thThis i" +
-        "s a test hello wo\",[\"BR\",{},[]]]],[\"P\",{},[\" The quick red fox j" +
-        "umps over the lazy brown dog. The quick red fox jumps over the l" +
-        "azy brown dog. The quick red fox jumps over the lazy brown dog. " +
-        "The quick red fox jumps over the lazy brown dog. The quick red f" +
-        "ox jumps over the lazy brown dog. The quick red fox jumps over t" +
-        "he lazy brown dThis this is a test test this is a test hello wor" +
-        "ld this is a  The quick red fox jumps over the lazy brown dog. T" +
-        "he quick red fox jumps over the lazy brown dog. The quick red fo" +
-        "x jumps over the lazy brown dog. The qui The thi sis a test this" +
-        " this is a tetest hello world this is a tes\",\" quick red fox jum" +
-        "ps over the lazy brown dog. The quick red fox jumps over the laz" +
-        "y brown dog. The quick red fox jumps over the lazy brown dog. Th" +
-        "e quick red fox jumps over the lazy brown dog. The quick red fox" +
-        " jumps over test test test test hello worl this is a test hello " +
-        "hello world this is atest\",[\"BR\",{},[]]]]],{\"metadata\":{\"default" +
-        "Title\":\"Rich text - Mon, October 9, 2017\",\"title\":\"Rich text - M" +
-        "on, October 9, 2017\",\"type\":\"pad\",\"users\":{\"27db49daedfaff042bb7" +
-        "86d7140793ea\":{\"name\":\"\",\"netfluxId\":\"27db49daedfaff042bb786d714" +
-        "0793ea\",\"uid\":\"36e2f7d190eabe5499aa0c2a622e27c6\"},\"9c019d52e0fcb" +
-        "e1d7293237b57eaccf8\":{\"name\":\"\",\"netfluxId\":\"9c019d52e0fcbe1d729" +
-        "3237b57eaccf8\",\"uid\":\"e27be495a398226daf3da500ebbe997b\"}}}}]";
-
-    var transformBy = convert([
-        "53bdf623408e00f19aebd8a436d47d6b2c0e2b16b103498afd169910967814ee",
-        [ [6312,0,"ck"], [6313,0," "], [6379,3,""] ]
-    ]);
-    
-    var toTransform = convert([
-        "53bdf623408e00f19aebd8a436d47d6b2c0e2b16b103498afd169910967814ee",
-        [ [6375,8,'"," '] ]
-    ]);
-
-    var res = Patch.transform(
-        toTransform,
-        transformBy,
-        O,
-        function (text, toTransform, transformBy) {
-            var result = Operation.transform0(text, toTransform, transformBy);
-            if (!result) { throw new Error(); }
-            var resultTest = Operation.apply(result, text);
-            JSON.parse(resultTest);
-            return result;
-        }
-    );
-    JSON.parse(Patch.apply(res, O));
-
-    cb();
-};
-
 var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         simplify(cycles, waitFor());
@@ -323,7 +185,5 @@ var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>v
         applyReversibility(cycles, waitFor());
     }).nThen(function (waitFor) {
         merge(cycles, waitFor());
-    }).nThen(function (waitFor) {
-        transform2(waitFor());
     }).nThen(callback);
 };

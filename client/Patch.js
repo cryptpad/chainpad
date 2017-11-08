@@ -40,7 +40,11 @@ export type Patch_t = {
     }
 };
 export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
-export type Patch_Transform_t = (string, string, string) => string
+export type Patch_Transform_t = (
+    toTransform:Array<Operation_t>,
+    transformBy:Array<Operation_t>,
+    state0:string
+) => Array<Operation_t>;
 */
 
 var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
@@ -280,60 +284,11 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform0 = Patch.transform0 = function (
-    origToTransform /*:Patch_t*/,
-    transformBy /*:Patch_t*/,
-    doc /*:string*/,
-    transformFunction /*:Operation_Transform_t*/ )
-{
-    var resultOfTransformBy = apply(transformBy, doc);
-
-    var toTransform = clone(origToTransform);
-    var text = doc;
-    var out = create(transformBy.mut.inverseOf
-        ? transformBy.mut.inverseOf.parentHash
-        : Sha.hex_sha256(resultOfTransformBy));
-    for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        var tti = toTransform.operations[i];
-        if (isCheckpointOp(tti, text)) { continue; }
-        for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
-            if (Common.DEBUG) {
-                console.log(
-                    ['TRANSFORM', text, tti, transformBy.operations[j]]
-                );
-            }
-            try {
-                tti = Operation.transform(text, tti, transformBy.operations[j], transformFunction);
-            } catch (e) {
-                console.error("The pluggable transform function threw an error, " +
-                    "failing operational transformation");
-                console.error(e.stack);
-                return create(Sha.hex_sha256(resultOfTransformBy));
-            }
-            if (!tti) {
-                break;
-            }
-        }
-        if (tti) {
-            if (Common.PARANOIA) { Operation.check(tti, resultOfTransformBy.length); }
-            addOperation(out, tti);
-        }
-    }
-
-    if (Common.PARANOIA) {
-        check(out, resultOfTransformBy.length);
-    }
-    return out;
-};
-
 var transform = Patch.transform = function (
     toTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
-    transformFunction /*:Operation_Transform_t*/,
-    patchTransformer /*:?Patch_Transform_t*/,
-    diffFunction /*:?(string, string)=>Array<Operation_t>*/ )
+    patchTransformer /*:Patch_Transform_t*/ )
 {
     if (Common.PARANOIA) {
         check(toTransform, doc.length);
@@ -342,23 +297,40 @@ var transform = Patch.transform = function (
     }
     if (toTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
 
+    var afterTransformBy = Patch.apply(transformBy, doc);
+    var out = create(transformBy.mut.inverseOf
+        ? transformBy.mut.inverseOf.parentHash
+        : Sha.hex_sha256(afterTransformBy),
+        toTransform.isCheckpoint
+    );
+
     if (transformBy.operations.length === 0) { return clone(toTransform); }
     if (toTransform.operations.length === 0) {
-        return create(Sha.hex_sha256(Patch.apply(transformBy, doc)));
-    }
-
-    if (patchTransformer && diffFunction) {
-        var resultOfToTransform = Patch.apply(toTransform, doc);
-        var resultOfTransformBy = Patch.apply(transformBy, doc);
-        var resultOfNewToTransform =
-            patchTransformer(resultOfToTransform, resultOfTransformBy, doc);
-        var out = create(Sha.hex_sha256(resultOfTransformBy));
-        var ops = diffFunction(resultOfTransformBy, resultOfNewToTransform);
-        Array.prototype.push.apply(out.operations, ops);
+        if (toTransform.isCheckpoint) { throw new Error(); }
         return out;
     }
 
-    return transform0(toTransform, transformBy, doc, transformFunction);
+    if (toTransform.isCheckpoint ||
+        (toTransform.operations.length === 1 && isCheckpointOp(toTransform.operations[0], doc)))
+    {
+        throw new Error("Attempting to transform a checkpoint, this should not happen");
+    }
+
+    if (transformBy.operations.length === 1 && isCheckpointOp(transformBy.operations[0], doc)) {
+        if (!transformBy.isCheckpoint) { throw new Error(); }
+        return toTransform;
+    }
+
+    if (transformBy.isCheckpoint) { throw new Error(); }
+
+    var ops = patchTransformer(toTransform.operations, transformBy.operations, doc);
+    Array.prototype.push.apply(out.operations, ops);
+
+    if (Common.PARANOIA) {
+        check(out, afterTransformBy.length);
+    }
+
+    return out;
 };
 
 var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
