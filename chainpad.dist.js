@@ -1933,6 +1933,14 @@ var hasSurrogate = Operation.hasSurrogate = function(str /*:string*/) {
     return surrogatePattern.test(str);
 };
 
+/**
+ * ATTENTION: This function is not just a neat way to make patches smaller, it's
+ *            actually part of the ChainPad consensus rules, so if you have a clever
+ *            idea to make it a bit faster, it is going to cause ChainPad to reject
+ *            old patches, which means when you go to load the history of a pad, you're
+ *            sunk.
+ * tl;dr can't touch this
+ */
 var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
@@ -1958,11 +1966,11 @@ var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string
     var opToInsert = op.toInsert.substring(i);
     var ropToInsert = rop.toInsert.substring(i);
 
-    var j;
-    for (i = ropToInsert.length - 1, j = opToInsert.length - 1; i >= 0 && j >= 0 &&
-        ropToInsert.charAt(i) === opToInsert.charAt(j); i--, j--) ;
-    opToInsert = opToInsert.substring(0, j + 1);
-    opToRemove = i + 1;
+    if (ropToInsert.length === opToInsert.length) {
+        for (i = ropToInsert.length-1; i >= 0 && ropToInsert[i] === opToInsert[i]; i--) ;
+        opToInsert = opToInsert.substring(0, i+1);
+        opToRemove = i+1;
+    }
 
     if (opToRemove === 0 && opToInsert.length === 0) { return null; }
     return create(opOffset, opToRemove, opToInsert);
