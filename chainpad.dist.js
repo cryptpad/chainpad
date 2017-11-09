@@ -1709,12 +1709,12 @@ export type ChainPad_Config_t = {
     initialState?: string,
     checkpointInterval?: number,
     avgSyncMilliseconds?: number,
+    validateContent?: (string)=>boolean,
     strictCheckpointValidation?: boolean,
+    patchTransformer?: Patch_Transform_t,
     operationSimplify?: Operation_Simplify_t,
     logLevel?: number,
-    patchTransformer?: Patch_Transform_t,
     userName?: string,
-    validateContent?: (string)=>boolean,
     noPrune?: boolean,
     diffFunction?: (string, string)=>Array<Operation_t>,
     diffBlockSize?: number
@@ -1751,6 +1751,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
             var ops = realtime.config.diffFunction(realtime.authDoc, newContent);
             var uncommitted = Patch.create(realtime.uncommitted.parentHash);
             Array.prototype.push.apply(uncommitted.operations, ops);
+            realtime.uncommitted = uncommitted;
         },
 
         onMessage: function (handler /*:(string, ()=>void)=>void*/) {
