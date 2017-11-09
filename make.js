@@ -19,7 +19,11 @@ var Fs = require('fs');
 var nThen = require('nthen');
 var Os = require('os');
 
-(function buildChainpad() {
+var cycles = 1;
+var tests = [];
+var timeOne;
+
+nThen(function (waitFor) {
     var g = new Glue();
     g.basepath('./client');
     g.main('ChainPad.js');
@@ -39,22 +43,30 @@ var Os = require('os');
     g.include('./sha256/sha256.asm.js');
     g.include('./sha256/sha256.js');
     g.include('./sha256/utils.js');
+    g.include('../node_modules/json.sortify/dist/JSON.sortify.js');
 
+    g.set('reset-exclude', true);
+    g.set('verbose', true);
+    g.set('umd', true);
     g.export('ChainPad');
+
     //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
-    g.render(Fs.createWriteStream('./chainpad.js'));
-})();
 
-var cycles = 1;
-if (process.argv.indexOf('--cycles') !== -1) {
-    cycles = process.argv[process.argv.indexOf('--cycles')+1];
-    console.log("Running [" + cycles + "] test cycles");
-}
-
-var tests = [];
-var timeOne = new Date().getTime();
-
-nThen(function (waitFor) {
+    g.render(waitFor(function (err, txt) {
+        if (err) { throw err; }
+        // make an anonymous define, don't insist on your name!
+        txt = txt.replace(
+            '"function"==typeof define&&define.amd&&define(f,function',
+            '"function"==typeof define&&define.amd&&define(function'
+        );
+        Fs.writeFile('./chainpad.js', txt, waitFor());
+    }));
+}).nThen(function (waitFor) {
+    timeOne = new Date().getTime();
+    if (process.argv.indexOf('--cycles') !== -1) {
+        cycles = process.argv[process.argv.indexOf('--cycles')+1];
+        console.log("Running [" + cycles + "] test cycles");
+    }
     var nt = nThen;
     ['./client/', './client/transform/'].forEach(function (path) {
         Fs.readdir(path, waitFor(function (err, ret) {
