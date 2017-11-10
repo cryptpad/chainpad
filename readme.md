@@ -55,11 +55,37 @@ unacknoledged message on the wire at a time).
 receive the content of the document after the patch, if the document has semantic requirements
 then this function can validate them if they are broken then the patch will be rejected.
 * **strictCheckpointValidation** (boolean) if true then we will fail any checkpoint which comes
-at an interval which is not in agreement with **checkpointInterval**. Defaul: *false*.
-* **transformFunction** (function) if specified, this function will be substituted for the default
-operational transformation function whenever two operations are applied simultaneously. Returning
-`null` from the function will reject the resulting patch. For an example function, see
-[chainpad-json-validator](https://github.com/xwiki-labs/chainpad-json-validator)
+at an interval which is not in agreement with **checkpointInterval**. Default: *false*.
+* **patchTransformer** (function) if specified, this function will be used for Operational
+Transformation. You have 3 options which are packaged with ChainPad or you can implement your own.
+  * `ChainPad.TextTransformer` (this is default so you need not pass anything) if you're using
+  ChainPad on plain text, you probably want to use this.
+  * `ChainPad.SmartJSONTransformer` if you are using ChainPad to patch JSON data, you probably
+  want this.
+  * `ChainPad.NaiveJSONTransformer` this is effectively just TextTransformer with a
+  validation step to make sure the result is JSON, using this is not recommended.
+* **operationSimplify** (function) This is an optional function which will override the function 
+`ChainPad.Operation.simplify` in case you want to use a different one. Simplify is used for "fixing"
+operations which remove content and then put back the same content. The default simplify will not
+create patches containing strings with single characters from
+[surrogate pairs](https://en.wikipedia.org/wiki/UTF-16#U.2B0000_to_U.2BD7FF_and_U.2BE000_to_U.2BFFFF).
+* **logLevel** (number) If this is zero, none of the normal logs will be printed.
+* **userName** (string) This is a string which will appear at the beginning of all logs in the
+console, if multiple ChainPad instances are running at the same time, this will help differentiate
+them.
+* **noPrune** (boolean) If this is true, history will not be pruned when a checkpoint is encountered.
+Caution: this can end up occupying a lot of memory!
+* **diffFunction** (function) This is a function which takes 2 strings and outputs and array of
+Operations. If unspecified, ChainPad will use the `ChainPad.Diff` which is a smart diff algorithm
+based on the one used by Fossel. The default diff function will not create patches containing strings
+with single characters from
+[surrogate pairs](https://en.wikipedia.org/wiki/UTF-16#U.2B0000_to_U.2BD7FF_and_U.2BE000_to_U.2BFFFF).
+* **diffBlockSize** (number) This is an optional number which will inform the default diff function
+`ChainPad.Diff` how big the rolling window should be. Smaller numbers imply more resource usage but
+common areas within a pair of documents which are smaller than this number will not be seen.
+The default is 8.
+* **transformFunction** (function) This parameter has been removed, if you attempt to pass this
+argument ChainPad will fail to start and throw an error.
 
 
 ## Binding the ChainPad Session to the Data Transport
