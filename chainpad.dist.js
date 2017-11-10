@@ -1134,8 +1134,6 @@ var create = function (config) {
         /** A patch representing all uncommitted work. */
         uncommitted: Patch.create(inversePatch(best.content).parentHash),
 
-        uncommittedDocLength: config.initialState.length,
-
         patchHandlers: [],
         changeHandlers: [],
 
@@ -1190,7 +1188,7 @@ var check = function(realtime) {
     Patch.check(realtime.uncommitted, realtime.authDoc.length);
 
     var uiDoc = Patch.apply(realtime.uncommitted, realtime.authDoc);
-    Common.assert(uiDoc.length === realtime.uncommittedDocLength);
+    Common.assert(uiDoc.length === uncommittedDocLength(realtime));
     if (realtime.userInterfaceContent !== '') {
         Common.assert(uiDoc === realtime.userInterfaceContent);
     }
@@ -1214,14 +1212,17 @@ var check = function(realtime) {
     Common.assert(doc === realtime.authDoc);
 };
 
+var uncommittedDocLength = function (realtime) {
+    return realtime.authDoc.length + Patch.lengthChange(realtime.uncommitted);
+};
+
 var doOperation = function (realtime, op) {
     if (Common.PARANOIA) {
         check(realtime);
         realtime.userInterfaceContent = Operation.apply(op, realtime.userInterfaceContent);
     }
-    Operation.check(op, realtime.uncommittedDocLength);
+    Operation.check(op, uncommittedDocLength(realtime));
     Patch.addOperation(realtime.uncommitted, op);
-    realtime.uncommittedDocLength += Operation.lengthChange(op);
 };
 
 var doPatch = function (realtime, patch) {
@@ -1231,9 +1232,8 @@ var doPatch = function (realtime, patch) {
             patch.parentHash);
         realtime.userInterfaceContent = Patch.apply(patch, realtime.userInterfaceContent);
     }
-    Patch.check(patch, realtime.uncommittedDocLength);
+    Patch.check(patch, uncommittedDocLength(realtime));
     realtime.uncommitted = Patch.merge(realtime.uncommitted, patch);
-    realtime.uncommittedDocLength += Patch.lengthChange(patch);
 };
 
 var isAncestorOf = function (realtime, ancestor, decendent) {
@@ -1411,7 +1411,6 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
 
             realtime.authDoc = msg.content.operations[0].toInsert;
             realtime.uncommitted = Patch.create(Sha.hex_sha256(realtime.authDoc));
-            realtime.uncommittedDocLength = realtime.authDoc.length;
             pushUIPatch(realtime, fixUserDocPatch);
 
             if (Common.PARANOIA) { realtime.userInterfaceContent = realtime.authDoc; }
@@ -1585,13 +1584,12 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
     uncommittedPatch = Patch.simplify(
         uncommittedPatch, oldUserInterfaceContent, realtime.config.operationSimplify);
 
-    realtime.uncommittedDocLength += Patch.lengthChange(uncommittedPatch);
     realtime.best = msg;
 
     if (Common.PARANOIA) {
         // apply the uncommittedPatch to the userInterface content.
         var newUserInterfaceContent = Patch.apply(uncommittedPatch, oldUserInterfaceContent);
-        Common.assert(realtime.userInterfaceContent.length === realtime.uncommittedDocLength);
+        Common.assert(realtime.userInterfaceContent.length === uncommittedDocLength(realtime));
         Common.assert(newUserInterfaceContent === realtime.userInterfaceContent);
     }
 
@@ -1767,6 +1765,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         start: function () {
             realtime.aborted = false;
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
+            realtime.pending = null;
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         },
 
