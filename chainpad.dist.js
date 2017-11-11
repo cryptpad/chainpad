@@ -23,6 +23,7 @@ r.m[0] = {
 "use strict";
 
 var Operation = require('./Operation');
+var Common = require('./Common');
 
 /*::
 import type { Operation_t } from './Operation';
@@ -186,7 +187,19 @@ var diff = module.exports.diff = function (
         matches.push(cb);
     }
     if (ce.length) { matches.push(ce); }
-    return matchesToOps(oldS, newS, reduceMatches(matches));
+    var reduced = reduceMatches(matches);
+    var ops = matchesToOps(oldS, newS, reduced);
+    if (Common.PARANOIA && Operation.applyMulti(ops, oldS) !== newS) {
+        window.ChainPad_Diff_DEBUG = {
+            oldS: oldS,
+            newS: newS,
+            matches: matches,
+            reduced: reduced,
+            ops: ops
+        };
+        throw new Error("diff did not make a sane patch, check window.ChainPad_Diff_DEBUG");
+    }
+    return ops;
 };
 },
 "Patch.js": function(module, exports, require){
