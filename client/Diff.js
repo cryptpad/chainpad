@@ -184,7 +184,7 @@ var diff = module.exports.diff = function (
     if (ce.length) { matches.push(ce); }
     var reduced = reduceMatches(matches);
     var ops = matchesToOps(oldS, newS, reduced);
-    if (Common.PARANOIA && Operation.applyMulti(ops, oldS) !== newS) {
+    if (Operation.applyMulti(ops, oldS) !== newS) {
         window.ChainPad_Diff_DEBUG = {
             oldS: oldS,
             newS: newS,
@@ -192,7 +192,11 @@ var diff = module.exports.diff = function (
             reduced: reduced,
             ops: ops
         };
-        throw new Error("diff did not make a sane patch, check window.ChainPad_Diff_DEBUG");
+        console.log("diff did not make a sane patch, check window.ChainPad_Diff_DEBUG");
+        ops = matchesToOps(oldS, newS, [cb, ce]);
+        if (Operation.applyMulti(ops, oldS) !== newS) {
+            throw new Error("diff is unrecoverable");
+        }
     }
     return ops;
 };
