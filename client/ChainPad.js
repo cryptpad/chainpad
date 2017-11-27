@@ -21,6 +21,11 @@ var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./sha256');
+var Diff = module.exports.Diff = require('./Diff');
+
+var TextTransformer = module.exports.TextTransformer = require('./transform/TextTransformer');
+var NaiveJSONTransformer = module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
+var SmartJSONTransformer = module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -415,13 +420,15 @@ var applyPatch = function (realtime, isFromMe, patch) {
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
         // work over their patch in order to preserve intent as much as possible.
+        //debug(realtime, "Transforming patch " + JSON.stringify(realtime.uncommitted.operations));
         realtime.uncommitted = Patch.transform(
             realtime.uncommitted,
             patch,
             realtime.authDoc,
-            realtime.config.transformFunction,
             realtime.config.patchTransformer
         );
+        //debug(realtime, "By " + JSON.stringify(patch.operations) +
+          //  "\nResult " + JSON.stringify(realtime.uncommitted.operations));
         if (realtime.config.validateContent) {
             newAuthDoc = Patch.apply(patch, realtime.authDoc);
             var userDoc = Patch.apply(realtime.uncommitted, newAuthDoc);
@@ -501,6 +508,12 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             // We got the initial state patch, channel already has a pad, no need to send it.
             realtime.setContentPatch = null;
         } else {
+            if (msg.content.isCheckpoint) {
+                debug(realtime, "[" +
+                    (isFromMe ? "our" : "their") +
+                        "] Checkpoint [" + msg.hashOf + "] is already known");
+                return true;
+            }
             debug(realtime, "Patch [" + msg.hashOf + "] is already known");
         }
         if (Common.PARANOIA) { check(realtime); }
@@ -575,7 +588,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             debug(realtime, "Patch [" + msg.hashOf + "] chain is [" + pcMsg + "] best chain is [" +
                 pcBest + "]");
             if (Common.PARANOIA) { check(realtime); }
-            return;
+            return true;
         }
     }
 
@@ -802,6 +815,9 @@ var wrapMessage = function (realtime, msg) {
 
 var mkConfig = function (config) {
     config = config || {};
+    if (config.transformFunction) {
+        throw new Error("chainpad config transformFunction is nolonger used");
+    }
     return Object.freeze({
         initialState: config.initialState || '',
         checkpointInterval: config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL,
@@ -811,29 +827,33 @@ var mkConfig = function (config) {
         operationSimplify: config.operationSimplify || Operation.simplify,
         logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
         noPrune: config.noPrune,
-        transformFunction: config.transformFunction || Operation.transform0,
-        patchTransformer: config.patchTransformer,
+        patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
-        validateContent: config.validateContent || function () { return true; }
+        validateContent: config.validateContent || function () { return true; },
+        diffFunction: config.diffFunction ||
+            function (strA, strB) { return Diff.diff(strA, strB, config.diffBlockSize); },
     });
 };
 
 /*::
 import type { Operation_Transform_t } from './Operation';
 import type { Operation_Simplify_t } from './Operation';
+import type { Operation_t } from './Operation';
 import type { Patch_t } from './Patch';
+import type { Patch_Transform_t } from './Patch';
 export type ChainPad_Config_t = {
     initialState?: string,
     checkpointInterval?: number,
     avgSyncMilliseconds?: number,
+    validateContent?: (string)=>boolean,
     strictCheckpointValidation?: boolean,
+    patchTransformer?: Patch_Transform_t,
     operationSimplify?: Operation_Simplify_t,
     logLevel?: number,
-    transformFunction?: Operation_Transform_t,
-    patchTransformer?: (state0:string, stateB:string, stateA:string) => string,
     userName?: string,
-    validateContent?: (string)=>boolean,
-    noPrune?: boolean
+    noPrune?: boolean,
+    diffFunction?: (string, string)=>Array<Operation_t>,
+    diffBlockSize?: number
 };
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
@@ -861,6 +881,13 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         change: function (offset /*:number*/, count /*:number*/, chars /*:string*/) {
             if (count === 0 && chars === '') { return; }
             doOperation(realtime, Operation.create(offset, count, chars));
+        },
+
+        contentUpdate: function (newContent /*:string*/) {
+            var ops = realtime.config.diffFunction(realtime.authDoc, newContent);
+            var uncommitted = Patch.create(realtime.uncommitted.parentHash);
+            Array.prototype.push.apply(uncommitted.operations, ops);
+            realtime.uncommitted = uncommitted;
         },
 
         onMessage: function (handler /*:(string, ()=>void)=>void*/) {

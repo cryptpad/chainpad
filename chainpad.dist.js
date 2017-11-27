@@ -1,6 +1,211 @@
 (function(){
 var r=function(){var e="function"==typeof require&&require,r=function(i,o,u){o||(o=0);var n=r.resolve(i,o),t=r.m[o][n];if(!t&&e){if(t=e(n))return t}else if(t&&t.c&&(o=t.c,n=t.m,t=r.m[o][t.m],!t))throw new Error('failed to require "'+n+'" from '+o);if(!t)throw new Error('failed to require "'+i+'" from '+u);return t.exports||(t.exports={},t.call(t.exports,t,t.exports,r.relative(n,o))),t.exports};return r.resolve=function(e,n){var i=e,t=e+".js",o=e+"/index.js";return r.m[n][t]&&t?t:r.m[n][o]&&o?o:i},r.relative=function(e,t){return function(n){if("."!=n.charAt(0))return r(n,t,e);var o=e.split("/"),f=n.split("/");o.pop();for(var i=0;i<f.length;i++){var u=f[i];".."==u?o.pop():"."!=u&&o.push(u)}return r(o.join("/"),t,e)}},r}();r.m = [];
 r.m[0] = {
+"json.sortify": {"c":1,"m":"dist/JSON.sortify.js"},
+"Diff.js": function(module, exports, require){
+/*@flow*/
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+"use strict";
+
+var Operation = require('./Operation');
+var Common = require('./Common');
+
+/*::
+import type { Operation_t } from './Operation';
+*/
+
+var DEFAULT_BLOCKSIZE = module.exports.DEFAULT_BLOCKSIZE = 8;
+
+var hashScan = function (str, blockSize) {
+    var out = {};
+    for (var i = 0; i + blockSize <= str.length; i++) {
+        var slice = str.slice(i, i + blockSize);
+        (out[slice] = out[slice] || []).push(i);
+    }
+    return out;
+};
+
+var isCompatible = function (m1, m2) {
+    if (m1.oldIndex < m2.oldIndex) {
+        if (m1.oldIndex + m1.length > m2.oldIndex) { return false; }
+        if (m1.newIndex + m1.length > m2.newIndex) { return false; }
+    } else if (m2.oldIndex < m1.oldIndex) {
+        if (m2.oldIndex + m2.length > m1.oldIndex) { return false; }
+        if (m2.newIndex + m2.length > m1.newIndex) { return false; }
+    } else {
+        return false;
+    }
+    return true;
+};
+
+var isBetter = function (test, reference) {
+    var testVal = (test.length * 2) - test.oldIndex - test.newIndex;
+    var refVal = (reference.length * 2) - reference.oldIndex - reference.newIndex;
+    return testVal > refVal;
+};
+
+var reduceMatches = function (matches) {
+    matches.sort(function (a, b) { return (a.oldIndex + a.newIndex) - (b.oldIndex + b.newIndex); });
+    var out = [];
+    var i = 0;
+    var m = matches[i++];
+    if (!m) { return out; }
+    while (i < matches.length) {
+        var mn = matches[i++];
+        if (!isCompatible(mn, m)) {
+            //console.log(JSON.stringify(mn) + ' is incompatible with ' + JSON.stringify(m));
+            // If mn is "better" than m, replace m with mn
+            if (!isBetter(mn, m)) { continue; }
+        } else {
+            out.push(m);
+        }
+        m = mn;
+    }
+    out.push(m);
+    return out;
+};
+
+var resolve = function (str, hash, blockSize) {
+    var matches = [];
+    var candidates = [];
+    for (var i = 0; i + blockSize <= str.length; i++) {
+        var slice = str.slice(i, i + blockSize);
+        var instances = (hash[slice] || []).slice(0);
+        for (var j = candidates.length - 1; j >= 0; j--) {
+            var c = candidates[j];
+            var ii = instances.indexOf(c.oldIndex + c.length - blockSize + 1);
+            if (ii > -1) {
+                c.length++;
+                instances.splice(ii, 1);
+            } else {
+                // We're pushing all of the candidates as "matches" and then we're going to sort them
+                // by length and pull out only ones which are non-intersecting because the result
+                // of this function needs to be a set of sequencial non-intersecting matches.
+                matches.push(candidates[j]);
+                //if (candidates.length === 1) { matches.push(candidates[j]); }
+
+                candidates.splice(j, 1);
+            }
+        }
+        for (var k = 0; k < instances.length; k++) {
+            candidates.push({
+                newIndex: i,
+                oldIndex: instances[k],
+                length: blockSize
+            });
+        }
+        //console.log(JSON.stringify(candidates));
+    }
+
+    // Normally we would only take one candidate, since they're equal value we just pick one and
+    // use it. However since we need all possible candidates which we will feed to our reduce
+    // function in order to get a list of sequencial non-intersecting matches.
+    Array.prototype.push.apply(matches, candidates);
+    //if (candidates[0]) { matches.push(candidates[0]); }
+
+    return matches;
+};
+
+var matchesToOps = function (oldS, newS, matches) {
+    matches.sort(function (a, b) { return a.oldIndex - b.oldIndex; });
+    var oldI = 0;
+    var newI = 0;
+    var out = [];
+    for (var i = 0; i < matches.length; i++) {
+        var m = matches[i];
+        out.push(Operation.create(oldI, m.oldIndex - oldI, newS.slice(newI, m.newIndex)));
+        oldI = m.oldIndex + m.length;
+        newI = m.newIndex + m.length;
+    }
+    out.push(Operation.create(oldI, oldS.length - oldI, newS.slice(newI)));
+    return out.filter(function (x) { return x.toRemove || x.toInsert; });
+};
+
+var getCommonBeginning = function (oldS, newS) {
+    var commonStart = 0;
+    var limit = oldS.length < newS.length ? oldS.length : newS.length;
+    while (oldS.charAt(commonStart) === newS.charAt(commonStart) && commonStart < limit) {
+        commonStart++;
+    }
+    return { newIndex: 0, oldIndex: 0, length: commonStart };
+};
+
+var getCommonEnd = function (oldS, newS, commonBeginning) {
+    var oldEnd = oldS.length - 1;
+    var newEnd = newS.length - 1;
+    var limit = Math.min(oldEnd, newEnd) - commonBeginning;
+    var commonEnd = 0;
+    while (oldS.charAt(oldEnd) === newS.charAt(newEnd) && limit >= 0) {
+        oldEnd--;
+        newEnd--;
+        commonEnd++;
+        limit--;
+    }
+    return { newIndex: newEnd + 1, oldIndex: oldEnd + 1, length: commonEnd };
+};
+
+var diff = module.exports.diff = function (
+    oldS /*:string*/,
+    newS /*:string*/,
+    blockSize /*:?number*/ ) /*:Array<Operation_t>*/
+{
+    blockSize = blockSize || DEFAULT_BLOCKSIZE;
+    var cb = getCommonBeginning(oldS, newS);
+    if (cb.length === oldS.length && oldS.length === newS.length) { return []; }
+    var ce = getCommonEnd(oldS, newS, cb.length);
+    var oldST = oldS;
+    var newST = newS;
+    if (ce.length) {
+        oldST = oldST.slice(0, ce.oldIndex+1);
+        newST = newST.slice(0, ce.newIndex+1);
+    }
+    if (cb.length) {
+        oldST = oldST.slice(cb.length);
+        newST = newST.slice(cb.length);
+    }
+    var matches = resolve(newST, hashScan(oldST, blockSize), blockSize);
+    if (cb.length) {
+        for (var i = 0; i < matches.length; i++) {
+            matches[i].oldIndex += cb.length;
+            matches[i].newIndex += cb.length;
+        }
+        matches.push(cb);
+    }
+    if (ce.length) { matches.push(ce); }
+    var reduced = reduceMatches(matches);
+    var ops = matchesToOps(oldS, newS, reduced);
+    if (Operation.applyMulti(ops, oldS) !== newS) {
+        window.ChainPad_Diff_DEBUG = {
+            oldS: oldS,
+            newS: newS,
+            matches: matches,
+            reduced: reduced,
+            ops: ops
+        };
+        console.log("diff did not make a sane patch, check window.ChainPad_Diff_DEBUG");
+        ops = matchesToOps(oldS, newS, [cb, ce]);
+        if (Operation.applyMulti(ops, oldS) !== newS) {
+            throw new Error("diff is unrecoverable");
+        }
+    }
+    return ops;
+};
+},
 "Patch.js": function(module, exports, require){
 /*@flow*/
 /*
@@ -44,7 +249,11 @@ export type Patch_t = {
     }
 };
 export type Patch_Packed_t = Array<Operation_Packed_t|Sha256_t>;
-export type Patch_Transform_t = (string, string, string) => string
+export type Patch_Transform_t = (
+    toTransform:Array<Operation_t>,
+    transformBy:Array<Operation_t>,
+    state0:string
+) => Array<Operation_t>;
 */
 
 var create = Patch.create = function (parentHash /*:Sha256_t*/, isCheckpoint /*:?boolean*/) {
@@ -284,59 +493,11 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform0 = Patch.transform0 = function (
-    origToTransform /*:Patch_t*/,
-    transformBy /*:Patch_t*/,
-    doc /*:string*/,
-    transformFunction /*:Operation_Transform_t*/ )
-{
-    var resultOfTransformBy = apply(transformBy, doc);
-
-    var toTransform = clone(origToTransform);
-    var text = doc;
-    var out = create(transformBy.mut.inverseOf
-        ? transformBy.mut.inverseOf.parentHash
-        : Sha.hex_sha256(resultOfTransformBy));
-    for (var i = toTransform.operations.length-1; i >= 0; i--) {
-        var tti = toTransform.operations[i];
-        if (isCheckpointOp(tti, text)) { continue; }
-        for (var j = transformBy.operations.length-1; j >= 0; j--) {
-            if (isCheckpointOp(transformBy.operations[j], text)) { console.log('cpo'); continue; }
-            if (Common.DEBUG) {
-                console.log(
-                    ['TRANSFORM', text, tti, transformBy.operations[j]]
-                );
-            }
-            try {
-                tti = Operation.transform(text, tti, transformBy.operations[j], transformFunction);
-            } catch (e) {
-                console.error("The pluggable transform function threw an error, " +
-                    "failing operational transformation");
-                console.error(e.stack);
-                return create(Sha.hex_sha256(resultOfTransformBy));
-            }
-            if (!tti) {
-                break;
-            }
-        }
-        if (tti) {
-            if (Common.PARANOIA) { Operation.check(tti, resultOfTransformBy.length); }
-            addOperation(out, tti);
-        }
-    }
-
-    if (Common.PARANOIA) {
-        check(out, resultOfTransformBy.length);
-    }
-    return out;
-};
-
 var transform = Patch.transform = function (
     toTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
-    transformFunction /*:Operation_Transform_t*/,
-    patchTransformer /*:?Patch_Transform_t*/ )
+    patchTransformer /*:Patch_Transform_t*/ )
 {
     if (Common.PARANOIA) {
         check(toTransform, doc.length);
@@ -345,27 +506,40 @@ var transform = Patch.transform = function (
     }
     if (toTransform.parentHash !== transformBy.parentHash) { throw new Error(); }
 
+    var afterTransformBy = Patch.apply(transformBy, doc);
+    var out = create(transformBy.mut.inverseOf
+        ? transformBy.mut.inverseOf.parentHash
+        : Sha.hex_sha256(afterTransformBy),
+        toTransform.isCheckpoint
+    );
+
     if (transformBy.operations.length === 0) { return clone(toTransform); }
     if (toTransform.operations.length === 0) {
-        return create(Sha.hex_sha256(Patch.apply(transformBy, doc)));
-    }
-
-    if (patchTransformer) {
-        console.log(toTransform);
-        console.log(transformBy);
-        var resultOfToTransform = Patch.apply(toTransform, doc);
-        var resultOfTransformBy = Patch.apply(transformBy, doc);
-        var resultOfNewToTransform =
-            patchTransformer(resultOfToTransform, resultOfTransformBy, doc);
-        var out = create(Sha.hex_sha256(resultOfTransformBy));
-        var op = Operation.diffText(resultOfTransformBy, resultOfNewToTransform);
-        console.log(op);
-        console.log(resultOfTransformBy === resultOfNewToTransform);
-        if (op) { out.operations.push(op); }
+        if (toTransform.isCheckpoint) { throw new Error(); }
         return out;
     }
 
-    return transform0(toTransform, transformBy, doc, transformFunction);
+    if (toTransform.isCheckpoint ||
+        (toTransform.operations.length === 1 && isCheckpointOp(toTransform.operations[0], doc)))
+    {
+        throw new Error("Attempting to transform a checkpoint, this should not happen");
+    }
+
+    if (transformBy.operations.length === 1 && isCheckpointOp(transformBy.operations[0], doc)) {
+        if (!transformBy.isCheckpoint) { throw new Error(); }
+        return toTransform;
+    }
+
+    if (transformBy.isCheckpoint) { throw new Error(); }
+
+    var ops = patchTransformer(toTransform.operations, transformBy.operations, doc);
+    Array.prototype.push.apply(out.operations, ops);
+
+    if (Common.PARANOIA) {
+        check(out, afterTransformBy.length);
+    }
+
+    return out;
 };
 
 var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
@@ -380,71 +554,6 @@ var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     }
     check(patch);
     return patch;
-};
-
-Object.freeze(module.exports);
-
-},
-"sha256.js": function(module, exports, require){
-/*@flow*/
-/*
- * Copyright 2014 XWiki SAS
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-var asm_sha256 = require('./sha256/exports.js');
-var old = require('./SHA256.js');
-var Common = require('./Common');
-
-/*::
-export type Sha256_t = string;
-*/
-
-var brokenTextEncode = function (str) {
-    var out = new Uint8Array(str.length);
-    for (var i = 0; i < str.length; i++) {
-        out[i] = str.charCodeAt(i) & 0xff;
-    }
-    return out;
-};
-
-module.exports.check = function (hex /*:any*/) /*:Sha256_t*/ {
-    if (typeof(hex) !== 'string') { throw new Error(); }
-    if (!/[a-f0-9]{64}/.test(hex)) { throw new Error(); }
-    return hex;
-};
-
-module.exports.hex_sha256 = function (d /*:string*/) /*:Sha256_t*/ {
-    d = d+'';
-    var ret = asm_sha256.hex(brokenTextEncode(d));
-    if (Common.PARANOIA) {
-        var oldHash = old.hex_sha256(d);
-        if (oldHash !== ret) {
-            try {
-                throw new Error();
-            } catch (e) {
-                console.log({
-                    hashErr: e,
-                    badHash: d,
-                    asmHasher: asm_sha256.hex,
-                    oldHasher: old.hex_sha256
-                });
-            }
-            return oldHash;
-        }
-    }
-    return ret;
 };
 
 Object.freeze(module.exports);
@@ -595,6 +704,71 @@ var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
 Object.freeze(module.exports);
 
 },
+"sha256.js": function(module, exports, require){
+/*@flow*/
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+var asm_sha256 = require('./sha256/exports.js');
+var old = require('./SHA256.js');
+var Common = require('./Common');
+
+/*::
+export type Sha256_t = string;
+*/
+
+var brokenTextEncode = function (str) {
+    var out = new Uint8Array(str.length);
+    for (var i = 0; i < str.length; i++) {
+        out[i] = str.charCodeAt(i) & 0xff;
+    }
+    return out;
+};
+
+module.exports.check = function (hex /*:any*/) /*:Sha256_t*/ {
+    if (typeof(hex) !== 'string') { throw new Error(); }
+    if (!/[a-f0-9]{64}/.test(hex)) { throw new Error(); }
+    return hex;
+};
+
+module.exports.hex_sha256 = function (d /*:string*/) /*:Sha256_t*/ {
+    d = d+'';
+    var ret = asm_sha256.hex(brokenTextEncode(d));
+    if (Common.PARANOIA) {
+        var oldHash = old.hex_sha256(d);
+        if (oldHash !== ret) {
+            try {
+                throw new Error();
+            } catch (e) {
+                console.log({
+                    hashErr: e,
+                    badHash: d,
+                    asmHasher: asm_sha256.hex,
+                    oldHasher: old.hex_sha256
+                });
+            }
+            return oldHash;
+        }
+    }
+    return ret;
+};
+
+Object.freeze(module.exports);
+
+},
 "Message.js": function(module, exports, require){
 /*@flow*/
 /*
@@ -727,6 +901,11 @@ var Operation = module.exports.Operation = require('./Operation');
 var Patch = module.exports.Patch = require('./Patch');
 var Message = module.exports.Message = require('./Message');
 var Sha = module.exports.Sha = require('./sha256');
+var Diff = module.exports.Diff = require('./Diff');
+
+var TextTransformer = module.exports.TextTransformer = require('./transform/TextTransformer');
+var NaiveJSONTransformer = module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
+var SmartJSONTransformer = module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -1121,13 +1300,15 @@ var applyPatch = function (realtime, isFromMe, patch) {
     } else {
         // It's someone else's patch which was received, we need to *transform* out uncommitted
         // work over their patch in order to preserve intent as much as possible.
+        //debug(realtime, "Transforming patch " + JSON.stringify(realtime.uncommitted.operations));
         realtime.uncommitted = Patch.transform(
             realtime.uncommitted,
             patch,
             realtime.authDoc,
-            realtime.config.transformFunction,
             realtime.config.patchTransformer
         );
+        //debug(realtime, "By " + JSON.stringify(patch.operations) +
+          //  "\nResult " + JSON.stringify(realtime.uncommitted.operations));
         if (realtime.config.validateContent) {
             newAuthDoc = Patch.apply(patch, realtime.authDoc);
             var userDoc = Patch.apply(realtime.uncommitted, newAuthDoc);
@@ -1207,6 +1388,12 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             // We got the initial state patch, channel already has a pad, no need to send it.
             realtime.setContentPatch = null;
         } else {
+            if (msg.content.isCheckpoint) {
+                debug(realtime, "[" +
+                    (isFromMe ? "our" : "their") +
+                        "] Checkpoint [" + msg.hashOf + "] is already known");
+                return true;
+            }
             debug(realtime, "Patch [" + msg.hashOf + "] is already known");
         }
         if (Common.PARANOIA) { check(realtime); }
@@ -1281,7 +1468,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             debug(realtime, "Patch [" + msg.hashOf + "] chain is [" + pcMsg + "] best chain is [" +
                 pcBest + "]");
             if (Common.PARANOIA) { check(realtime); }
-            return;
+            return true;
         }
     }
 
@@ -1508,6 +1695,9 @@ var wrapMessage = function (realtime, msg) {
 
 var mkConfig = function (config) {
     config = config || {};
+    if (config.transformFunction) {
+        throw new Error("chainpad config transformFunction is nolonger used");
+    }
     return Object.freeze({
         initialState: config.initialState || '',
         checkpointInterval: config.checkpointInterval || DEFAULT_CHECKPOINT_INTERVAL,
@@ -1517,29 +1707,33 @@ var mkConfig = function (config) {
         operationSimplify: config.operationSimplify || Operation.simplify,
         logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
         noPrune: config.noPrune,
-        transformFunction: config.transformFunction || Operation.transform0,
-        patchTransformer: config.patchTransformer,
+        patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
-        validateContent: config.validateContent || function () { return true; }
+        validateContent: config.validateContent || function () { return true; },
+        diffFunction: config.diffFunction ||
+            function (strA, strB) { return Diff.diff(strA, strB, config.diffBlockSize); },
     });
 };
 
 /*::
 import type { Operation_Transform_t } from './Operation';
 import type { Operation_Simplify_t } from './Operation';
+import type { Operation_t } from './Operation';
 import type { Patch_t } from './Patch';
+import type { Patch_Transform_t } from './Patch';
 export type ChainPad_Config_t = {
     initialState?: string,
     checkpointInterval?: number,
     avgSyncMilliseconds?: number,
+    validateContent?: (string)=>boolean,
     strictCheckpointValidation?: boolean,
+    patchTransformer?: Patch_Transform_t,
     operationSimplify?: Operation_Simplify_t,
     logLevel?: number,
-    transformFunction?: Operation_Transform_t,
-    patchTransformer?: (state0:string, stateB:string, stateA:string) => string,
     userName?: string,
-    validateContent?: (string)=>boolean,
-    noPrune?: boolean
+    noPrune?: boolean,
+    diffFunction?: (string, string)=>Array<Operation_t>,
+    diffBlockSize?: number
 };
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
@@ -1567,6 +1761,13 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
         change: function (offset /*:number*/, count /*:number*/, chars /*:string*/) {
             if (count === 0 && chars === '') { return; }
             doOperation(realtime, Operation.create(offset, count, chars));
+        },
+
+        contentUpdate: function (newContent /*:string*/) {
+            var ops = realtime.config.diffFunction(realtime.authDoc, newContent);
+            var uncommitted = Patch.create(realtime.uncommitted.parentHash);
+            Array.prototype.push.apply(uncommitted.operations, ops);
+            realtime.uncommitted = uncommitted;
         },
 
         onMessage: function (handler /*:(string, ()=>void)=>void*/) {
@@ -1723,6 +1924,12 @@ var apply = Operation.apply = function (op /*:Operation_t*/, doc /*:string*/)
     return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
+var applyMulti = Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
+{
+    for (var i = ops.length - 1; i >= 0; i--) { doc = apply(ops[i], doc); }
+    return doc;
+};
+
 var invert = Operation.invert = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
@@ -1742,6 +1949,14 @@ var hasSurrogate = Operation.hasSurrogate = function(str /*:string*/) {
     return surrogatePattern.test(str);
 };
 
+/**
+ * ATTENTION: This function is not just a neat way to make patches smaller, it's
+ *            actually part of the ChainPad consensus rules, so if you have a clever
+ *            idea to make it a bit faster, it is going to cause ChainPad to reject
+ *            old patches, which means when you go to load the history of a pad, you're
+ *            sunk.
+ * tl;dr can't touch this
+ */
 var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
@@ -1883,67 +2098,6 @@ var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Opera
     );
 };
 
-/**
- * this is a lossy and dirty algorithm, everything else is nice but transformation
- * has to be lossy because both operations have the same base and they diverge.
- * This could be made nicer and/or tailored to a specific data type.
- *
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which also has the same base.
- * @return toTransform *or* null if the result is a no-op.
- */
-var transform0 = Operation.transform0 = function (
-    text /*:string*/,
-    toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/)
-{
-    if (toTransform.offset > transformBy.offset) {
-        if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
-            // simple rebase
-            return create(
-                toTransform.offset - transformBy.toRemove + transformBy.toInsert.length,
-                toTransform.toRemove,
-                toTransform.toInsert
-            );
-        }
-        var newToRemove =
-            toTransform.toRemove - (transformBy.offset + transformBy.toRemove - toTransform.offset);
-        if (newToRemove < 0) { newToRemove = 0; }
-        if (newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
-        return create(
-            transformBy.offset + transformBy.toInsert.length,
-            newToRemove,
-            toTransform.toInsert
-        );
-    }
-    // they don't touch, yay
-    if (toTransform.offset + toTransform.toRemove < transformBy.offset) { return toTransform; }
-    // Truncate what will be deleted...
-    var _newToRemove = transformBy.offset - toTransform.offset;
-    if (_newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
-    return create(toTransform.offset, _newToRemove, toTransform.toInsert);
-};
-
-/**
- * @param toTransform the operation which is converted
- * @param transformBy an existing operation which also has the same base.
- * @return a modified clone of toTransform *or* toTransform itself if no change was made.
- */
-var transform = Operation.transform = function (
-    text /*:string*/,
-    toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    transformFunction /*:Operation_Transform_t*/)
-{
-    if (Common.PARANOIA) {
-        check(toTransform);
-        check(transformBy);
-    }
-    var result = transformFunction(text, toTransform, transformBy);
-    if (Common.PARANOIA && result) { check(result); }
-    return result;
-};
-
 /** Used for testing. */
 var random = Operation.random = function (docLength /*:number*/) {
     Common.assert(Common.isUint(docLength));
@@ -1954,11 +2108,6 @@ var random = Operation.random = function (docLength /*:number*/) {
         toInsert = Common.randomASCII(Math.floor(Math.random() * 20));
     } while (toRemove === 0 && toInsert === '');
     return create(offset, toRemove, toInsert);
-};
-
-var diffText = Operation.diffText = function (stateA /*:string*/, stateB /*:string*/) {
-    var op = create(0, stateA.length, stateB);
-    return simplify(op, stateA);
 };
 
 Object.freeze(module.exports);
@@ -3108,6 +3257,755 @@ module.exports.sha256_asm = function sha256_asm ( stdlib, foreign, buffer ) {
     }
 }
 
+},
+"transform/TextTransformer.js": function(module, exports, require){
+/*@flow*/
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+"use strict";
+
+/*::
+import type { Operation_t } from '../Operation'
+import type { Patch_t } from '../Patch' 
+*/
+var Operation = require('../Operation');
+var Patch = require('../Patch');
+var Sha = require('../sha256');
+var Common = require('../Common');
+
+var transformOp0 = function (
+    toTransform /*:Operation_t*/,
+    transformBy /*:Operation_t*/,
+    text /*:string*/ )
+{
+    if (toTransform.offset > transformBy.offset) {
+        if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
+            // simple rebase
+            return Operation.create(
+                toTransform.offset - transformBy.toRemove + transformBy.toInsert.length,
+                toTransform.toRemove,
+                toTransform.toInsert
+            );
+        }
+        var newToRemove =
+            toTransform.toRemove - (transformBy.offset + transformBy.toRemove - toTransform.offset);
+        if (newToRemove < 0) { newToRemove = 0; }
+        if (newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
+        return Operation.create(
+            transformBy.offset + transformBy.toInsert.length,
+            newToRemove,
+            toTransform.toInsert
+        );
+    }
+    // they don't touch, yay
+    if (toTransform.offset + toTransform.toRemove < transformBy.offset) { return toTransform; }
+    // Truncate what will be deleted...
+    var _newToRemove = transformBy.offset - toTransform.offset;
+    if (_newToRemove === 0 && toTransform.toInsert.length === 0) { return null; }
+    return Operation.create(toTransform.offset, _newToRemove, toTransform.toInsert);
+};
+
+var transformOp = function (
+    toTransform /*:Operation_t*/,
+    transformBy /*:Operation_t*/,
+    text /*:string*/ )
+{
+    if (Common.PARANOIA) {
+        Operation.check(toTransform);
+        Operation.check(transformBy);
+    }
+    var result = transformOp0(toTransform, transformBy, text);
+    if (Common.PARANOIA && result) { Operation.check(result); }
+    return result;
+};
+
+var transform = module.exports = function (
+    opsToTransform /*:Array<Operation_t>*/,
+    opsTransformBy /*:Array<Operation_t>*/,
+    doc /*:string*/ ) /*:Array<Operation_t>*/
+{
+    var resultOfTransformBy = doc;
+    var i;
+    for (i = opsTransformBy.length - 1; i >= 0; i--) {
+        resultOfTransformBy = Operation.apply(opsTransformBy[i], resultOfTransformBy);
+    }
+    var text = doc;
+    var out = [];
+    for (i = opsToTransform.length - 1; i >= 0; i--) {
+        var tti = opsToTransform[i];
+        for (var j = opsTransformBy.length - 1; j >= 0; j--) {
+            if (Common.DEBUG) {
+                console.log(
+                    ['TRANSFORM', text, tti, opsTransformBy[j]]
+                );
+            }
+            try {
+                tti = transformOp(tti, opsTransformBy[j], text);
+            } catch (e) {
+                console.error("The pluggable transform function threw an error, " +
+                    "failing operational transformation");
+                console.error(e.stack);
+                return [];
+            }
+            if (!tti) {
+                break;
+            }
+        }
+        if (tti) {
+            if (Common.PARANOIA) { Operation.check(tti, resultOfTransformBy.length); }
+            out.unshift(tti);
+        }
+    }
+    return out;
+};
+},
+"transform/SmartJSONTransformer.js": function(module, exports, require){
+
+/*@flow*/
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+"use strict";
+
+var Sortify = require('json.sortify');
+var Diff = require('../Diff');
+var Patch = require('../Patch');
+var Operation = require('../Operation');
+var TextTransformer = require('./TextTransformer');
+var Sha = require('../sha256');
+
+/*::
+import type { Operation_t } from '../Operation';
+*/
+
+var isArray = function (obj) {
+    return Object.prototype.toString.call(obj)==='[object Array]';
+};
+
+/*  Arrays and nulls both register as 'object' when using native typeof
+    we need to distinguish them as their own types, so use this instead. */
+var type = function (dat) {
+    return dat === null?  'null': isArray(dat)?'array': typeof(dat);
+};
+
+var find = function (map, path) {
+    /* safely search for nested values in an object via a path */
+    return (map && path.reduce(function (p, n) {
+        return typeof p[n] !== 'undefined' && p[n];
+    }, map)) || undefined;
+};
+
+var clone = function (val) {
+    return JSON.parse(JSON.stringify(val));
+};
+
+var deepEqual = function (A /*:any*/, B /*:any*/) {
+    var t_A = type(A);
+    var t_B = type(B);
+    if (t_A !== t_B) { return false; }
+    if (t_A === 'object') {
+        var k_A = Object.keys(A);
+        var k_B = Object.keys(B);
+        return k_A.length === k_B.length &&
+            !k_A.some(function (a, i) { return !deepEqual(A[a], B[a]); }) &&
+            !k_B.some(function (b) { return !(b in A); });
+    } else if (t_A === 'array') {
+        return A.length === B.length &&
+            !A.some(function (a, i) { return !deepEqual(a, B[i]); });
+    } else {
+        return A === B;
+    }
+};
+
+var operation = function (type, path, value, prev, other) {
+    var res = {
+        type: type,
+        path: path,
+        value: value,
+    };
+    if (type === 'replace') {
+        res.prev = prev;
+    } else if (type === 'splice') {
+        res.offset = prev;
+        res.removals = other;
+    } else if (type !== 'remove') { throw new Error('expected a removal'); }
+    // if it's not a replace or splice, it's a 'remove'
+    return res;
+};
+
+var replace = function (ops, path, to, from) {
+    ops.push(operation('replace', path, to, from));
+};
+
+var remove = function (ops, path, val) {
+    ops.push(operation('remove', path, val));
+};
+
+
+// HERE
+var splice = function (ops, path, value, offset, removals) {
+    ops.push(operation('splice', path, value, offset, removals));
+};
+
+/*
+    all of A's path is at the beginning of B
+    roughly:  B.indexOf(A) === 0
+*/
+var pathOverlaps = function (A /*:Array<string|number>*/, B /*:Array<string|number>*/) {
+    return !A.some(function (a, i) {
+        return a !== B[i];
+    });
+};
+
+// OT Case #1 replace->replace ✔
+// OT Case #2 replace->remove ✔
+// OT Case #3 replace->splice ✔
+// OT Case #4 remove->replace ✔
+// OT Case #5 remove->remove ✔
+// OT Case #6 remove->splice ✔
+// OT Case #7 splice->replace ✔
+// OT Case #8 splice->remove ✔
+// OT Case #9 splice->splice ✔
+var CASES = (function () {
+    var types = ['replace', 'remove', 'splice'];
+
+    var matrix = {};
+    var i = 1;
+
+    types.forEach(function (a) {
+        matrix[a] = {};
+        return types.forEach(function (b) { matrix[a][b] = i++; });
+    });
+    return matrix;
+}());
+
+// A and B are lists of operations which result from calling diff
+
+var resolve = function (A /*:any*/, B /*:any*/, arbiter /*:?function*/) {
+    if (!(type(A) === 'array' && type(B) === 'array')) {
+        throw new Error("[resolve] expected two arrays");
+    }
+
+    /* OVERVIEW
+        * B
+        *  1. filter removals at identical paths
+        *
+        */
+
+    B = B.filter(function (b) {
+            // if A removed part of the tree you were working on...
+            if (A.some(function (a) {
+                if (a.type === 'remove') {
+                    if (pathOverlaps(a.path, b.path)) {
+                        if (b.path.length - a.path.length > 1) { return true; }
+                    }
+                }
+            })) {
+                // this is weird... FIXME
+                return false;
+            }
+
+            /*  remove operations which would no longer make sense
+                for instance, if a replaces an array with a string,
+                that would invalidate a splice operation at that path */
+            if (b.type === 'splice' && A.some(function (a) {
+                if (a.type === 'splice' && pathOverlaps(a.path, b.path)) {
+                    if (a.path.length - b.path.length < 0) {
+                        if (!a.removals) { return; }
+
+                        var start = a.offset;
+                        var end = a.offset + a.removals;
+
+                        for (;start < end; start++) {
+                            if (start === b.path[a.path.length]) {
+                                /*
+                                if (typeof(arbiter) === 'function' &&
+                                    deepEqual(a.path, b.path) &&
+                                    a.value.length === 1 &&
+                                    b.value.length === 1 &&
+                                    typeof(a.value[0]) === 'string' &&
+                                    typeof(b.value[0]) === 'string') {
+                                    console.log('strings');
+
+                                    return arbiter(a, b, CASES.splice.splice);
+                                }
+                                */
+
+                                // b is a descendant of a removal
+                                return true;
+                            }
+                        }
+                    }
+                }
+            })) { return false; }
+
+            if (!A.some(function (a) {
+                return b.type === 'remove' && deepEqual(a.path, b.path);
+            })) { return true; }
+        })
+        .filter(function (b) {
+            // let A win conflicts over b if no arbiter is supplied here
+
+            // Arbiter is required here
+            return !A.some(function (a) {
+                if (b.type === 'replace' && a.type === 'replace') {
+                    // remove any operations which return true
+                    if (deepEqual(a.path, b.path)) {
+                        if (typeof(a.value) === 'string' && typeof(b.value) === 'string') {
+                            if (arbiter && a.prev === b.prev && a.value !== b.value) {
+                                return arbiter(a, b, CASES.replace.replace);
+                            }
+                            return true;
+                        }
+                        return true;
+                    }
+                }
+            });
+        })
+        .map(function (b) {
+            // if a splice in A modifies the path to b
+            // update b's path to reflect that
+
+            A.forEach(function (a) {
+                if (a.type === 'splice') {
+                    // TODO
+                    // what if a.path == b.path
+                    // what if a removes elements (splice) and b also removes elements
+                    // (generally we merge these two together but it is probably best to allow the api customer to decide via a "strategy")
+                    // Note that A might be removing *and* inserting because a splice is roughly equivilent to a ChainPad Operation
+                    // Consult Transform0 :)
+
+            // resolve insertion overlaps array.push conflicts
+            // iterate over A such that each overlapping splice
+            // adjusts the path/offset of b
+
+                    if (deepEqual(a.path, b.path)) {
+                        if (b.type === 'splice') {
+                            // what if the splice is a removal?
+                            b.offset += (a.value.length - a.removals);
+                            // if both A and B are removing the same thing
+                            // be careful
+                        } else {
+                            // adjust the path of b to account for the splice
+                            // TODO
+                        }
+                        return;
+                    }
+
+                    if (pathOverlaps(a.path, b.path)) {
+                        // TODO validate that this isn't an off-by-one error
+                        var pos = a.path.length;
+                        if (typeof(b.path[pos]) === 'number' && a.offset <= b.path[pos]) { // FIXME a.value is undefined
+                            b.path[pos] += (a.value.length - a.removals);
+                        }
+                    }
+                }
+            });
+
+            return b;
+        });
+
+    return B;
+};
+
+// A, B, f, path, ops
+var objects = function (A, B, path, ops) {
+    var Akeys = Object.keys(A);
+    var Bkeys = Object.keys(B);
+
+    Bkeys.forEach(function (b) {
+        var t_b = type(B[b]);
+        var old = A[b];
+
+        var nextPath = path.concat(b);
+
+        if (Akeys.indexOf(b) === -1) {
+            // there was an insertion
+
+            // mind the fallthrough behaviour
+            if (t_b === 'undefined') {
+                throw new Error("undefined type has key. this shouldn't happen?");
+            }
+            if (old) { throw new Error("no such key existed in b, so 'old' should be falsey"); }
+            replace(ops, nextPath, B[b], old);
+            return;
+        }
+
+        // else the key already existed
+        var t_a = type(old);
+        if (t_a !== t_b) {
+            // its type changed!
+            console.log("type changed from [%s] to [%s]", t_a, t_b);
+            // type changes always mean a change happened
+            if (t_b === 'undefined') {
+                throw new Error("first pass should never reveal undefined keys");
+            }
+            replace(ops, nextPath, B[b], old);
+            return;
+        }
+
+        if (t_a === 'object') {
+            // it's an object
+            objects(A[b], B[b], nextPath, ops);
+        } else if (t_a === 'array') {
+            // it's an array
+            arrays(A[b], B[b], nextPath, ops);
+        } else if (A[b] !== B[b]) {
+            // it's not an array or object, so we can do === comparison
+            replace(ops, nextPath, B[b], old);
+        }
+    });
+    Akeys.forEach(function (a) {
+        // the key was deleted
+        if (Bkeys.indexOf(a) === -1 || type(B[a]) === 'undefined') {
+            remove(ops, path.concat(a), A[a]);
+        }
+    });
+};
+
+var arrayShallowEquality = function (A, B) {
+    if (A.length !== B.length) { return false; }
+    for (var i = 0; i < A.length; i++) {
+    if (type(A[i]) !== type(B[i])) { return false; }
+    }
+    return true;
+};
+
+// When an element in an array (number, string, bool) is changed, instead of a replace we
+// will do a splice(offset, [element], 1)
+var arrays = function (A_orig, B, path, ops) {
+    var A = A_orig.slice(0); // shallow clone
+
+    if (A.length === 0) {
+    // A is zero length, this is going to be easy...
+    splice(ops, path, B, 0, 0);
+
+    } else if (arrayShallowEquality(A, B)) {
+    // This is a relatively simple case, the elements in A and B are all of the same type and if
+    // that type happens to be a primitive type, they are also equal.
+    // This means no change will be needed at the level of this array, only it's children.
+    A.forEach(function (a, i) {
+        var b = B[i];
+        if (b === a) { return; }
+        var old = a;
+        var nextPath = path.concat(i);
+
+        var t_a = type(a);
+        switch (t_a) {
+        case 'undefined':
+            throw new Error('existing key had type `undefined`. this should never happen');
+        case 'object':
+            objects(a, b, nextPath, ops);
+            break;
+        case 'array':
+            arrays(a, b, nextPath, ops);
+            break;
+        default:
+        //console.log('replace: ' + t_a);
+            //splice(ops, path, [b], i, 1);
+            replace(ops, nextPath, b, old);
+        }
+    });
+    } else {
+    // Something was changed in the length of the array or one of the primitives so we're going
+    // to make an actual change to this array, not only it's children.
+    var commonStart = 0;
+    var commonEnd = 0;
+    while (commonStart < A.length && deepEqual(A[commonStart], B[commonStart])) { commonStart++; }
+    while (deepEqual(A[A.length - 1 - commonEnd], B[B.length - 1 - commonEnd]) &&
+            commonEnd + commonStart < A.length && commonEnd + commonStart < B.length)
+    {
+        commonEnd++;
+    }
+    var toRemove = A.length - commonStart - commonEnd;
+    var toInsert = [];
+    if (B.length !== commonStart + commonEnd) {
+        toInsert = B.slice(commonStart, B.length - commonEnd);
+    }
+    splice(ops, path, toInsert, commonStart, toRemove);
+    }
+};
+
+var diff = function (A, B) {
+    var ops = [];
+
+    var t_A = type(A);
+    var t_B = type(B);
+
+    if (t_A !== t_B) {
+        throw new Error("Can't merge two objects of differing types");
+    }
+
+    if (t_B === 'array') {
+        arrays(A, B, [], ops);
+    } else if (t_B === 'object') {
+        objects(A, B, [], ops);
+    } else {
+        throw new Error("unsupported datatype" + t_B);
+    }
+    return ops;
+};
+
+var applyOp = function (O, op) {
+    var path;
+    var key;
+    switch (op.type) {
+        case "replace":
+            key = op.path[op.path.length -1];
+            path = op.path.slice(0, op.path.length - 1);
+
+            var parent = find(O, path);
+
+            if (!parent) {
+                throw new Error("cannot apply change to non-existent element");
+            }
+            parent[key] = op.value;
+            break;
+        case "splice":
+            var found = find(O, op.path);
+            if (!found) {
+                console.error("[applyOp] expected path [%s] to exist in object", op.path.join(','));
+                throw new Error("Path did not exist");
+            }
+
+            if (type(found) !== 'array') {
+                throw new Error("Can't splice non-array");
+            }
+
+            Array.prototype.splice.apply(found, [op.offset, op.removals].concat(op.value));
+            break;
+        case "remove":
+            key = op.path[op.path.length -1];
+            path = op.path.slice(0, op.path.length - 1);
+            delete find(O, path)[key];
+            break;
+        default:
+            throw new Error('unsupported operation type');
+    }
+};
+
+var patch = function (O, ops) {
+    ops.forEach(function (op) {
+        applyOp(O, op);
+    });
+    return O;
+};
+
+    
+/////
+
+// We mutate b in this function
+// Our operation is p_b and the other person's operation is p_a.
+// If we return true here, it means our operation will die off.
+var arbiter = function (p_a, p_b, c) {
+    if (p_a.prev !== p_b.prev) { throw new Error("Parent values don't match!"); }
+
+    if (c === CASES.splice.splice) {
+        // We and the other person are both pushing strings to an array so
+        // we'll just accept both of them into the array.
+        console.log(p_a);
+        console.log(p_b);
+        console.log('\n\n\n\n\n\n\n\n\n');
+        // TODO: do we really want to kill off our operation in this case ?
+        return true;
+    }
+    var o = p_a.prev;
+
+    var ops_a = Diff.diff(o, p_a.value);
+    var ops_b = Diff.diff(o, p_b.value);
+
+    /*  given the parent text, the op to transform, and the incoming op
+        return a transformed operation which takes the incoming
+        op into account */
+    var ops_x = TextTransformer(ops_b, ops_a, o);
+
+    /*  Apply the incoming operation to the parent text
+    */
+    var x2 = Operation.applyMulti(ops_a, o);
+
+    /*  Apply the transformed operation to the result of the incoming op
+    */
+    var x3 = Operation.applyMulti(ops_x, x2);
+
+    p_b.value = x3;
+};
+
+var transform = module.exports = function (
+    opsToTransform /*:Array<Operation_t>*/,
+    opsTransformBy /*:Array<Operation_t>*/,
+    s_orig /*:string*/ ) /*:Array<Operation_t>*/
+{
+    var o_orig = JSON.parse(s_orig);
+    var s_transformBy = Operation.applyMulti(opsTransformBy, s_orig);
+    var o_transformBy = JSON.parse(s_transformBy);
+    // try whole patch at a time, see how it goes...
+    var s_toTransform = Operation.applyMulti(opsToTransform, s_orig);
+    var o_toTransform = JSON.parse(s_toTransform);
+
+    try {
+        var diffTTF = diff(o_orig, o_toTransform);
+        var diffTFB = diff(o_orig, o_transformBy);
+        var newDiffTTF = resolve(diffTFB, diffTTF, arbiter);
+
+        // mutates orig
+        patch(o_orig, diffTFB);
+        patch(o_orig, newDiffTTF);
+
+        var result = Sortify(o_orig);
+        var ret = Diff.diff(s_transformBy, result);
+        return ret;
+
+    } catch (err) {
+        console.error(err); // FIXME Path did not exist...
+    }
+    return [];
+};
+
+
+module.exports._ = {
+    clone: clone,
+    pathOverlaps: pathOverlaps,
+    deepEqual: deepEqual,
+    diff: diff,
+    resolve: resolve,
+    patch: patch,
+
+};
+},
+"transform/NaiveJSONTransformer.js": function(module, exports, require){
+/*@flow*/
+/* global window */
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+"use strict";
+
+var TextTransformer = require('./TextTransformer');
+var ChainPad = require('../ChainPad');
+var Operation = require('../Operation');
+
+/*::
+import type { Operation_t } from '../Operation';
+*/
+
+var transform = module.exports = function (
+    opsToTransform /*:Array<Operation_t>*/,
+    opsTransformBy /*:Array<Operation_t>*/,
+    text /*:string*/ ) /*:Array<Operation_t>*/
+{
+    var window = window || {};
+    var DEBUG = window.REALTIME_DEBUG = window.REALTIME_DEBUG || {};
+
+    var resultOps, text2, text3;
+    try {
+        // text = O (mutual common ancestor)
+        // toTransform = A (your own operation)
+        // transformBy = B (the incoming operation)
+        // threeway merge (0, A, B)
+
+        resultOps = TextTransformer(opsToTransform, opsTransformBy, text);
+
+        text2 = Operation.applyMulti(opsTransformBy, text);
+
+        text3 = Operation.applyMulti(resultOps, text2);
+        try {
+            JSON.parse(text3);
+            return resultOps;
+        } catch (e) {
+            console.error(e);
+            DEBUG.ot_parseError = {
+                type: 'resultParseError',
+                resultOps: resultOps,
+
+                toTransform: opsToTransform,
+                transformBy: opsTransformBy,
+
+                text1: text,
+                text2: text2,
+                text3: text3,
+                error: e
+            };
+            console.log('Debugging info available at `window.REALTIME_DEBUG.ot_parseError`');
+        }
+    } catch (x) {
+        console.error(x);
+        DEBUG.ot_applyError = {
+            type: 'resultParseError',
+            resultOps: resultOps,
+
+            toTransform: opsToTransform,
+            transformBy: opsTransformBy,
+
+            text1: text,
+            text2: text2,
+            text3: text3,
+            error: x
+        };
+        console.log('Debugging info available at `window.REALTIME_DEBUG.ot_applyError`');
+    }
+
+    // return an empty patch in case we can't do anything else
+    return [];
+};
 }
 };
-ChainPad = r("ChainPad.js");}());
+r.m[1] = {
+"dist/JSON.sortify.js": function(module, exports, require){
+"use strict";(function(factory){if(typeof module!=="undefined"&&module.exports)module.exports=factory();else if(typeof define=="function"&&typeof define.amd=="object")define("json.sortify",factory);else JSON.sortify=factory()})(function(){ /*!
+*    Copyright 2015-2017 Thomas Rosenau
+*
+*    Licensed under the Apache License, Version 2.0 (the "License");
+*    you may not use this file except in compliance with the License.
+*    You may obtain a copy of the License at
+*
+*        http://www.apache.org/licenses/LICENSE-2.0
+*
+*    Unless required by applicable law or agreed to in writing, software
+*    distributed under the License is distributed on an "AS IS" BASIS,
+*    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+*    See the License for the specific language governing permissions and
+*    limitations under the License.
+*/"use strict";var sortKeys=function sortKeys(o){if(Array.isArray(o)){return o.map(sortKeys)}else if(o instanceof Object){var _ret=function(){var numeric=[];var nonNumeric=[];Object.keys(o).forEach(function(key){if(/^(0|[1-9][0-9]*)$/.test(key)){numeric.push(+key)}else {nonNumeric.push(key)}});return {v:numeric.sort(function(a,b){return a-b}).concat(nonNumeric.sort()).reduce(function(result,key){result[key]=sortKeys(o[key]);return result},{})}}();if(typeof _ret==="object")return _ret.v}return o};var jsonStringify=JSON.stringify.bind(JSON);var sortify=function sortify(value,replacer,space){var nativeJson=jsonStringify(value,replacer,0);if(!nativeJson||nativeJson[0]!=="{"&&nativeJson[0]!=="["){return nativeJson}var cleanObj=JSON.parse(nativeJson);return jsonStringify(sortKeys(cleanObj),null,space)};return sortify});
+}
+};
+function umd(n,f){"object"==typeof exports&&(module.exports=n),"function"==typeof define&&define.amd&&define(function(){return n});var e;"undefined"!=typeof window?e=window:"undefined"!=typeof global?e=global:"undefined"!=typeof self&&(e=self),e[f]=n}umd(r("ChainPad.js"), "ChainPad");}());

@@ -21,6 +21,8 @@ var Operation = require('./Operation');
 var Patch = require('./Patch');
 var Sha = require('./sha256');
 var nThen = require('nthen');
+var ChainPad = require('./ChainPad');
+var TextTransformer = require('./transform/TextTransformer');
 
 // These are fuzz tests so increasing this number might catch more errors.
 var OPERATIONS = 1000;
@@ -112,6 +114,12 @@ var merge = function (cycles, callback) {
     callback();
 };
 
+var convert = function (p) {
+    var out = Patch.create(p[0]);
+    p[1].forEach(function (o) { out.operations.push(Operation.create.apply(null, o)); });
+    return out;
+};
+
 var transformStatic = function () {
     var p0 = [
         "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235",
@@ -121,18 +129,13 @@ var transformStatic = function () {
         "0349d89ef3eeca9b7e2b7b8136d8ffe43206938d7c5df37cb3600fc2cd1df235",
         [ [ 0, 92, "[[fWjLRmIVZV[BiG^IHqDGmCuooPE" ] ]
     ];
-    var convert = function (p) {
-        var out = Patch.create(p[0]);
-        p[1].forEach(function (o) { out.operations.push(Operation.create.apply(null, o)); });
-        return out;
-    };
 
     Patch.transform(
       convert(p0),
       convert(p1),
       "_VMsPV\\PNXjQiEoTdoUHYxZALnDjB]onfiN[dBP[vqeGJJZ\\vNaQ`\\Y_jHNnrHOoFN^UWrWjCKoKe" +
           "D[`nosFrM`EpY\\Ib",
-      Operation.transform0
+      TextTransformer
     );
 
     var p2 = [
@@ -140,7 +143,7 @@ var transformStatic = function () {
         [ [ 10, 5, "" ] ]
     ];
 
-    Patch.transform(convert(p2), convert(p2), "SofyheYQWsva[NLAGkB", Operation.transform0);
+    Patch.transform(convert(p2), convert(p2), "SofyheYQWsva[NLAGkB", TextTransformer);
 };
 
 var transform = function (cycles, callback) {
@@ -149,7 +152,7 @@ var transform = function (cycles, callback) {
         var docA = Common.randomASCII(Math.floor(Math.random() * 100)+1);
         var patchAB = Patch.random(docA);
         var patchAC = Patch.random(docA);
-        var patchBC = Patch.transform(patchAC, patchAB, docA, Operation.transform0);
+        var patchBC = Patch.transform(patchAC, patchAB, docA, TextTransformer);
         var docB = Patch.apply(patchAB, docA);
         Patch.apply(patchBC, docB);
     }
