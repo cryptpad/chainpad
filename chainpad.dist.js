@@ -40,6 +40,7 @@ var hashScan = function (str, blockSize) {
     return out;
 };
 
+// return true if two segments do not overlap, else false
 var isCompatible = function (m1, m2) {
     if (m1.oldIndex < m2.oldIndex) {
         if (m1.oldIndex + m1.length > m2.oldIndex) { return false; }
@@ -60,6 +61,7 @@ var isBetter = function (test, reference) {
 };
 
 var reduceMatches = function (matches) {
+    // ascending sort
     matches.sort(function (a, b) { return (a.oldIndex + a.newIndex) - (b.oldIndex + b.newIndex); });
     var out = [];
     var i = 0;
@@ -83,6 +85,8 @@ var reduceMatches = function (matches) {
 var resolve = function (str, hash, blockSize) {
     var matches = [];
     var candidates = [];
+    // do the same thing as was done in hashscan, but for the new string
+    // look for commonalities between new and old data
     for (var i = 0; i + blockSize <= str.length; i++) {
         var slice = str.slice(i, i + blockSize);
         var instances = (hash[slice] || []).slice(0);
@@ -115,6 +119,7 @@ var resolve = function (str, hash, blockSize) {
     // Normally we would only take one candidate, since they're equal value we just pick one and
     // use it. However since we need all possible candidates which we will feed to our reduce
     // function in order to get a list of sequencial non-intersecting matches.
+    // like concat, but destructive
     Array.prototype.push.apply(matches, candidates);
     //if (candidates[0]) { matches.push(candidates[0]); }
 
@@ -122,6 +127,7 @@ var resolve = function (str, hash, blockSize) {
 };
 
 var matchesToOps = function (oldS, newS, matches) {
+    // ascending sort
     matches.sort(function (a, b) { return a.oldIndex - b.oldIndex; });
     var oldI = 0;
     var newI = 0;
@@ -138,6 +144,7 @@ var matchesToOps = function (oldS, newS, matches) {
 
 var getCommonBeginning = function (oldS, newS) {
     var commonStart = 0;
+    // This could be Math.min ?
     var limit = oldS.length < newS.length ? oldS.length : newS.length;
     while (oldS.charAt(commonStart) === newS.charAt(commonStart) && commonStart < limit) {
         commonStart++;
@@ -190,7 +197,8 @@ var diff = module.exports.diff = function (
     var reduced = reduceMatches(matches);
     var ops = matchesToOps(oldS, newS, reduced);
     if (Operation.applyMulti(ops, oldS) !== newS) {
-        window.ChainPad_Diff_DEBUG = {
+        // use 'self' instead of 'window' for node and webworkers
+        self.ChainPad_Diff_DEBUG = {
             oldS: oldS,
             newS: newS,
             matches: matches,
@@ -205,6 +213,7 @@ var diff = module.exports.diff = function (
     }
     return ops;
 };
+
 },
 "Patch.js": function(module, exports, require){
 /*@flow*/
@@ -3372,6 +3381,7 @@ var transform = module.exports = function (
     }
     return out;
 };
+
 },
 "transform/SmartJSONTransformer.js": function(module, exports, require){
 
@@ -3416,10 +3426,12 @@ var type = function (dat) {
 };
 
 var find = function (map, path) {
-    /* safely search for nested values in an object via a path */
-    return (map && path.reduce(function (p, n) {
-        return typeof p[n] !== 'undefined' && p[n];
-    }, map)) || undefined;
+    var l = path.length;
+    for (var i = 0; i < l; i++) {
+        if (typeof(map[path[i]]) === 'undefined') { return; }
+        map = map[path[i]];
+    }
+    return map;
 };
 
 var clone = function (val) {
@@ -3898,6 +3910,7 @@ module.exports._ = {
     patch: patch,
 
 };
+
 },
 "transform/NaiveJSONTransformer.js": function(module, exports, require){
 /*@flow*/
