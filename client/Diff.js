@@ -185,7 +185,8 @@ var diff = module.exports.diff = function (
     var reduced = reduceMatches(matches);
     var ops = matchesToOps(oldS, newS, reduced);
     if (Operation.applyMulti(ops, oldS) !== newS) {
-        window.ChainPad_Diff_DEBUG = {
+        // use 'self' instead of 'window' for node and webworkers
+        self.ChainPad_Diff_DEBUG = {
             oldS: oldS,
             newS: newS,
             matches: matches,
