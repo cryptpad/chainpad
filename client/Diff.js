@@ -35,6 +35,7 @@ var hashScan = function (str, blockSize) {
     return out;
 };
 
+// return true if two segments do not overlap, else false
 var isCompatible = function (m1, m2) {
     if (m1.oldIndex < m2.oldIndex) {
         if (m1.oldIndex + m1.length > m2.oldIndex) { return false; }
@@ -55,6 +56,7 @@ var isBetter = function (test, reference) {
 };
 
 var reduceMatches = function (matches) {
+    // ascending sort
     matches.sort(function (a, b) { return (a.oldIndex + a.newIndex) - (b.oldIndex + b.newIndex); });
     var out = [];
     var i = 0;
@@ -78,6 +80,8 @@ var reduceMatches = function (matches) {
 var resolve = function (str, hash, blockSize) {
     var matches = [];
     var candidates = [];
+    // do the same thing as was done in hashscan, but for the new string
+    // look for commonalities between new and old data
     for (var i = 0; i + blockSize <= str.length; i++) {
         var slice = str.slice(i, i + blockSize);
         var instances = (hash[slice] || []).slice(0);
@@ -110,6 +114,7 @@ var resolve = function (str, hash, blockSize) {
     // Normally we would only take one candidate, since they're equal value we just pick one and
     // use it. However since we need all possible candidates which we will feed to our reduce
     // function in order to get a list of sequencial non-intersecting matches.
+    // like concat, but destructive
     Array.prototype.push.apply(matches, candidates);
     //if (candidates[0]) { matches.push(candidates[0]); }
 
@@ -117,6 +122,7 @@ var resolve = function (str, hash, blockSize) {
 };
 
 var matchesToOps = function (oldS, newS, matches) {
+    // ascending sort
     matches.sort(function (a, b) { return a.oldIndex - b.oldIndex; });
     var oldI = 0;
     var newI = 0;
@@ -133,6 +139,7 @@ var matchesToOps = function (oldS, newS, matches) {
 
 var getCommonBeginning = function (oldS, newS) {
     var commonStart = 0;
+    // This could be Math.min ?
     var limit = oldS.length < newS.length ? oldS.length : newS.length;
     while (oldS.charAt(commonStart) === newS.charAt(commonStart) && commonStart < limit) {
         commonStart++;
