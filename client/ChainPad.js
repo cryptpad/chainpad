@@ -76,7 +76,7 @@ var unschedule = function (realtime, schedule) {
     clearTimeout(schedule);
 };
 
-var onMessage = function (realtime, message, callback) {
+var onMessage = function (realtime, message, callback /*:(?string)=>void*/) {
     if (!realtime.messageHandlers.length) {
         callback("no onMessage() handler registered");
     }
@@ -88,12 +88,12 @@ var onMessage = function (realtime, message, callback) {
             });
         });
     } catch (e) {
-        callback(e);
+        callback(e.stack);
     }
 };
 
 var sendMessage = function (realtime, msg, callback, timeSent) {
-    var strMsg = Message.toString(msg);
+    var strMsg = Message.toStr(msg);
 
     onMessage(realtime, strMsg, function (err) {
         if (err) {
@@ -792,7 +792,28 @@ var getContentAtState = function (realtime, msg) {
     return { error: undefined, doc: doc };
 };
 
-var wrapMessage = function (realtime, msg) {
+/*::
+export type ChainPad_BlockContent_t = {
+    error: ?string,
+    doc: ?string
+};
+export type ChainPad_Block_t = {
+    type: 'Block',
+    hashOf: string,
+    lastMsgHash: string,
+    isCheckpoint: boolean,
+    getParent: ()=>?ChainPad_Block_t,
+    getContent: ()=>{
+        error: ?string,
+        doc: ?string
+    },
+    getPatch: ()=>Patch_t,
+    getInversePatch: ()=>Patch_t,
+    equals: (?ChainPad_Block_t, ?any)=>boolean
+};
+*/
+
+var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
     return Object.freeze({
         type: 'Block',
         hashOf: msg.hashOf,
@@ -807,8 +828,8 @@ var wrapMessage = function (realtime, msg) {
         getInversePatch: function () { return Patch.clone(inversePatch(msg.content)); },
         equals: function (block, msgOpt) {
             if (msgOpt) { return msg === msgOpt; }
-            Common.assert(block.type === 'Block');
-            return block.equals(null, msg);
+            if (!block || typeof(block) !== 'object' || block.type !== 'Block') { return false; }
+            return block.equals(block, msg);
         }
     });
 };
@@ -829,9 +850,11 @@ var mkConfig = function (config) {
         noPrune: config.noPrune,
         patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
-        validateContent: config.validateContent || function () { return true; },
+        validateContent: config.validateContent || function (x) { x = x; return true; },
         diffFunction: config.diffFunction ||
-            function (strA, strB) { return Diff.diff(strA, strB, config.diffBlockSize); },
+            function (strA, strB /*:string*/) {
+                return Diff.diff(strA, strB, config.diffBlockSize);
+            },
     });
 };
 

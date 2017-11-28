@@ -79,7 +79,7 @@ var create = Message.create = function (
 };
 
 // $FlowFixMe doesn't like the toString()
-var toString = Message.toString = function (msg /*:Message_t*/) {
+var toString = Message.toStr = Message.toString = function (msg /*:Message_t*/) {
     if (Common.PARANOIA) { check(msg); }
     if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
         if (!msg.content) { throw new Error(); }

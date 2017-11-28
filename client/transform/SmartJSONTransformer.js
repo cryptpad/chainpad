@@ -91,7 +91,6 @@ export type SmartJSONTransformer_Remove_t = {
 };
 export type SmartJSONTransformer_Operation_t =
     SmartJSONTransformer_Replace_t | SmartJSONTransformer_Splice_t | SmartJSONTransformer_Remove_t;
-
 */
 
 var operation = function (type, path, value, prev, other) /*:SmartJSONTransformer_Operation_t*/ {
@@ -434,7 +433,7 @@ var diff = function (A, B) {
     return ops;
 };
 
-var applyOp = function (O, op) {
+var applyOp = function (O, op /*:SmartJSONTransformer_Operation_t*/) {
     var path;
     var key;
     var result;
