@@ -49,31 +49,82 @@ var isCompatible = function (m1, m2) {
     return true;
 };
 
+var isCompatibleWithPrevious = function (test, list) {
+    var l = list.length;
+    for (var i = 0; i < l; i++) {
+        if (!isCompatible(test, list[i])) { return false; }
+    }
+    return true;
+};
+
+if (isCompatible({
+    newIndex: 5,
+    oldIndex: 3,
+    length: 9,
+}, {
+    newIndex: 27,
+    oldIndex: 8,
+    length: 12,
+})) { throw new Error('fuck'); }
+
+
 var isBetter = function (test, reference) {
     var testVal = (test.length * 2) - test.oldIndex - test.newIndex;
     var refVal = (reference.length * 2) - reference.oldIndex - reference.newIndex;
     return testVal > refVal;
 };
 
+var scoreMatch = function (m) {
+    return (m.length * 2) - m.oldIndex - m.newIndex;
+};
+
+var removeIndices = function (A, toRemove) {
+    if (!toRemove.length) { return; }
+    for (var j = toRemove.length - 1; j > -1; j--) {
+        A.splice(toRemove[j], 1);
+    }
+};
+
+/*  returns either false, or the list of indices to remove
+*/
+var worseThanMatch = function (pending, current) {
+    var score_m = scoreMatch(current);
+    var score_rest = 0;
+    var toRemove = [];
+
+    var l = pending.length;
+    for (var i = 0; i < l; i++) {
+        if (isCompatible(current, pending[i])) { continue; }
+        toRemove.push(i);
+        score_rest += scoreMatch(pending[i]);
+        if (score_rest > score_m) { return false; }
+    }
+
+    return toRemove;
+};
+
+/*  called with all the matches, including the common start and common end, if they exist...
+
+    A: Common start (should not be replaced)
+    B: potential operations
+    B': satisfactory set of operations
+    C: Common end (should not be replaced)
+
+*/
 var reduceMatches = function (matches) {
     // ascending sort
     matches.sort(function (a, b) { return (a.oldIndex + a.newIndex) - (b.oldIndex + b.newIndex); });
     var out = [];
-    var i = 0;
-    var m = matches[i++];
-    if (!m) { return out; }
-    while (i < matches.length) {
-        var mn = matches[i++];
-        if (!isCompatible(mn, m)) {
-            //console.log(JSON.stringify(mn) + ' is incompatible with ' + JSON.stringify(m));
-            // If mn is "better" than m, replace m with mn
-            if (!isBetter(mn, m)) { continue; }
-        } else {
-            out.push(m);
+
+    var l_m = matches.length;
+    var toRemove;
+    for (var i = 0; i < l_m; i++) {
+        toRemove = worseThanMatch(out, matches[i]);
+        if (toRemove) {
+            removeIndices(out, toRemove);
+            out.push(matches[i]);
         }
-        m = mn;
     }
-    out.push(m);
     return out;
 };
 
@@ -133,7 +184,28 @@ var matchesToOps = function (oldS, newS, matches) {
         oldI = m.oldIndex + m.length;
         newI = m.newIndex + m.length;
     }
-    out.push(Operation.create(oldI, oldS.length - oldI, newS.slice(newI)));
+    out.push(Operation.create(oldI, oldS.length - oldI, newS.slice(newI))); // does not check ops
+
+/*
+    out.filter(function (o) {
+        return o.toRemove || o.toInsert;
+    }).forEach(function (op) {
+        try { Operation.check(op); }
+        catch (e) {
+            console.log('\nINVALID OPERATION');
+            console.log(oldS);
+            console.log(newS);
+            //console.log(m);
+
+            console.log('\nMATCHES');
+            console.log(matches);
+            console.log('\nOPS');
+            console.log(out);
+
+            throw e;
+        }
+    });*/
+
     return out.filter(function (x) { return x.toRemove || x.toInsert; });
 };
 
@@ -190,16 +262,17 @@ var diff = module.exports.diff = function (
     }
     if (ce.length) { matches.push(ce); }
     var reduced = reduceMatches(matches);
-    var ops = matchesToOps(oldS, newS, reduced);
+    var ops = matchesToOps(oldS, newS, reduced); // HERE produced operation with negative toRemove
     if (Operation.applyMulti(ops, oldS) !== newS) {
         // use 'self' instead of 'window' for node and webworkers
-        self.ChainPad_Diff_DEBUG = {
+        var x = (typeof(global) !== 'undefined'? global: self).ChainPad_Diff_DEBUG = {
             oldS: oldS,
             newS: newS,
             matches: matches,
             reduced: reduced,
             ops: ops
         };
+        console.log(x);
         console.log("diff did not make a sane patch, check window.ChainPad_Diff_DEBUG");
         ops = matchesToOps(oldS, newS, [cb, ce]);
         if (Operation.applyMulti(ops, oldS) !== newS) {
@@ -208,3 +281,14 @@ var diff = module.exports.diff = function (
     }
     return ops;
 };
+
+(function () {
+var oldS = 'pewpewpewpewbangpewfoobang';
+var newS = 'pewpbangpewpewpewpewfoobangewpewbangpewfoobangpewboomboombangbangng';
+
+var d = diff(oldS, newS, 8);
+
+}());
+
+
+

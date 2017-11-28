@@ -33,11 +33,39 @@ var operationEquals = function (opA, opB, doc) {
     return docA === docB;
 };
 
+var die = function (n) { return Math.floor(Math.random() * n); };
+var choose = function (A) { return A[die(A.length)]; };
+
+var words = [
+    'pewpewpew',
+    'bangpew',
+    'boomboom',
+    'foobang',
+    'pewbangpew',
+    'bangbang',
+    'boombang',
+];
+
+var lowEntropyRandomOp = function (docLength) {
+    Common.assert(Common.isUint(docLength));
+    var offset = die(docLength);
+    var toRemove = die(docLength - offset);
+    var toInsert = '';
+    do {
+        toInsert = [0, 0, 0].map(function () {
+            return choose(words);
+        }).join("");
+    } while (toRemove === 0 && toInsert == '');
+    return Operation.create(offset, toRemove, toInsert);
+};
+
 var fuzzCycle = function (doc, hash) {
+    if (!doc) { throw new Error('!doc'); }
     var ops = [];
     var lastOp;
     for (;;) {
-        var op = Operation.random(10);
+        if (!doc || doc.length === 0) { throw new Error("NO GOOD"); }
+        var op = lowEntropyRandomOp(10); //doc.length); // Operation.random(10);
         if (lastOp) {
             op = Operation.create(
                 op.offset + lastOp.offset + lastOp.toRemove + Diff.DEFAULT_BLOCKSIZE,
@@ -53,6 +81,7 @@ var fuzzCycle = function (doc, hash) {
     var p = Patch.create(hash);
     Array.prototype.push.apply(p.operations, ops);
     var doc2 = Patch.apply(p, doc);
+    console.log(doc2);
 
     var ops2 = Diff.diff(doc, doc2);
 
@@ -64,6 +93,7 @@ var fuzzCycle = function (doc, hash) {
             ok = false;
         }
     }
+    /*
     if (ok) { return; }
 
     for (i = 0; i < Math.max(ops.length, ops2.length); i++) {
@@ -80,12 +110,17 @@ var fuzzCycle = function (doc, hash) {
         }
         console.log();
     }
-    throw new Error();
+    throw new Error();*/
 };
 
 var fuzz = function (cycles, callback) {
     for (var i = 0; i < 10; i++) {
-        var doc = Common.randomASCII(Math.random() * 9000 + 1000);
+        var doc = [1,2,3].map(function () {
+            return choose(words);
+        }).join('');
+        console.log('DOC');
+        console.log(doc);
+        //Math.random() * Common.randomASCII(Math.random() * 9000 + 1000);
         var hash = Sha.hex_sha256(doc);
         for (var j = 0; j < cycles; j++) {
             fuzzCycle(doc, hash);
@@ -97,6 +132,6 @@ var fuzz = function (cycles, callback) {
 var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     console.log('diff test');
     nThen(function (waitFor) {
-        fuzz(cycles, waitFor());
+        fuzz(100 || cycles, waitFor());
     }).nThen(callback);
 };
