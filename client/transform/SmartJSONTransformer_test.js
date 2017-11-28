@@ -45,6 +45,7 @@ var runASSERTS = function (jsonTransformer) {
 var assert = function (test, msg, expected) {
     ASSERTS.push({
         f: function (i, jsonTransformer) {
+            test = (test /*:function*/);
             var returned = test(expected, jsonTransformer);
             if (returned === true) {
                 assertions++;

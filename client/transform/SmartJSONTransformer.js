@@ -70,20 +70,55 @@ var deepEqual = function (A /*:any*/, B /*:any*/) {
     }
 };
 
-var operation = function (type, path, value, prev, other) {
-    var res = {
-        type: type,
-        path: path,
-        value: value,
-    };
+/*::
+export type SmartJSONTransformer_Replace_t = {
+    type: 'replace',
+    path: Array<string|number>,
+    value: any,
+    prev: any
+};
+export type SmartJSONTransformer_Splice_t = {
+    type: 'splice',
+    path: Array<string|number>,
+    value: any,
+    offset: number,
+    removals: number
+};
+export type SmartJSONTransformer_Remove_t = {
+    type: 'remove',
+    path: Array<string|number>,
+    value: any
+};
+export type SmartJSONTransformer_Operation_t =
+    SmartJSONTransformer_Replace_t | SmartJSONTransformer_Splice_t | SmartJSONTransformer_Remove_t;
+
+*/
+
+var operation = function (type, path, value, prev, other) /*:SmartJSONTransformer_Operation_t*/ {
     if (type === 'replace') {
-        res.prev = prev;
+        return ({
+            type: 'replace',
+            path: path,
+            value: value,
+            prev: prev,
+        } /*:SmartJSONTransformer_Replace_t*/);
     } else if (type === 'splice') {
-        res.offset = prev;
-        res.removals = other;
+        if (typeof(prev) !== 'number') { throw new Error(); }
+        if (typeof(other) !== 'number') { throw new Error(); }
+        return ({
+            type: 'splice',
+            path: path,
+            value: value,
+            offset: prev,
+            removals: other
+        } /*:SmartJSONTransformer_Splice_t*/);
     } else if (type !== 'remove') { throw new Error('expected a removal'); }
     // if it's not a replace or splice, it's a 'remove'
-    return res;
+    return ({
+        type: 'remove',
+        path: path,
+        value: value,
+    } /*:SmartJSONTransformer_Remove_t*/);
 };
 
 var replace = function (ops, path, to, from) {
@@ -402,6 +437,7 @@ var diff = function (A, B) {
 var applyOp = function (O, op) {
     var path;
     var key;
+    var result;
     switch (op.type) {
         case "replace":
             key = op.path[op.path.length -1];
@@ -430,7 +466,8 @@ var applyOp = function (O, op) {
         case "remove":
             key = op.path[op.path.length -1];
             path = op.path.slice(0, op.path.length - 1);
-            delete find(O, path)[key];
+            result = find(O, path);
+            if (typeof(result) !== 'undefined') { delete result[key]; }
             break;
         default:
             throw new Error('unsupported operation type');
