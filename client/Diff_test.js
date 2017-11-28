@@ -46,16 +46,21 @@ var words = [
     'boombang',
 ];
 
+var chooseThreeWords = function () {
+    var i = 3;
+    var s = '';
+    while (i--) { s += choose(words); }
+    return s;
+};
+
 var lowEntropyRandomOp = function (docLength) {
     Common.assert(Common.isUint(docLength));
     var offset = die(docLength);
     var toRemove = die(docLength - offset);
     var toInsert = '';
     do {
-        toInsert = [0, 0, 0].map(function () {
-            return choose(words);
-        }).join("");
-    } while (toRemove === 0 && toInsert == '');
+        toInsert = chooseThreeWords();
+    } while (toRemove === 0 && toInsert === '');
     return Operation.create(offset, toRemove, toInsert);
 };
 
@@ -115,9 +120,7 @@ var fuzzCycle = function (doc, hash) {
 
 var fuzz = function (cycles, callback) {
     for (var i = 0; i < 10; i++) {
-        var doc = [1,2,3].map(function () {
-            return choose(words);
-        }).join('');
+        var doc = chooseThreeWords();
         console.log('DOC');
         console.log(doc);
         //Math.random() * Common.randomASCII(Math.random() * 9000 + 1000);
