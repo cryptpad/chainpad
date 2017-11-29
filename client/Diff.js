@@ -18,7 +18,7 @@
 "use strict";
 
 var Operation = require('./Operation');
-//var Common = require('./Common');
+var Common = require('./Common');
 
 /*::
 import type { Operation_t } from './Operation';
@@ -57,24 +57,25 @@ var scoreMatch = function (m) {
     the indices to remove MUST be in ascending order
     otherwise this could remove the wrong values
     operates strictly via side-effects */
-var removeIndices = function (A, toRemove) {
+var removeAscendingIndices = function (A, toRemove) {
     if (!toRemove.length) { return; }
     for (var j = toRemove.length - 1; j > -1; j--) {
         A.splice(toRemove[j], 1);
     }
 };
 
-/*  given the list of pending matches, and a candidate match,
-    determine whether the candidate is compatible with the entire pending list
-    if it is not, determine if there exists a set of pending candidates which
-    collectively are not as valuable as the candidate.
+/*  given a candidate match and the list of pending matches
+    evaluate whether the candidate conflicts with existing matches
+    if the candidate is determined to be a worse match than existing matches
+        return false
+    otherwise return the list of candidates which should be replaced
 
     returns either:
     false => the candidate is incompatible, and its conflicts are more valuable
     empty array => truthy, but there is nothing to remove (no conflicts)
     array => conflicting elements to replace with the candidate
 */
-var worseThanMatch = function (pending, current) {
+var listInferiorCandidates = function (current, pending) {
     var score_m = scoreMatch(current);
     var score_rest = 0;
     var toRemove = [];
@@ -97,6 +98,8 @@ var worseThanMatch = function (pending, current) {
     B': satisfactory set of operations
     C: Common end (should not be replaced)
 
+    this implementation does not do anything special to protect A and C
+    it is believed that the way matches are produced, they should not be removed.
 */
 var reduceMatches = function (matches) {
     // ascending sort
@@ -106,9 +109,9 @@ var reduceMatches = function (matches) {
     var l_m = matches.length;
     var toRemove;
     for (var i = 0; i < l_m; i++) {
-        toRemove = worseThanMatch(out, matches[i]);
+        toRemove = listInferiorCandidates(matches[i], out);
         if (toRemove) {
-            removeIndices(out, toRemove);
+            removeAscendingIndices(out, toRemove);
             out.push(matches[i]);
         }
     }
@@ -173,25 +176,25 @@ var matchesToOps = function (oldS, newS, matches) {
     }
     out.push(Operation.create(oldI, oldS.length - oldI, newS.slice(newI))); // does not check ops
 
-/*
-    out.filter(function (o) {
-        return o.toRemove || o.toInsert;
-    }).forEach(function (op) {
-        try { Operation.check(op); }
-        catch (e) {
-            console.log('\nINVALID OPERATION');
-            console.log(oldS);
-            console.log(newS);
-            //console.log(m);
+    if (Common.PARANOIA) {
+        out.forEach(function (op) {
+            if (!op.toRemove || !op.toInsert) { return; }
+            try { Operation.check(op); }
+            catch (e) {
+                console.log('\nINVALID OPERATION');
+                console.log(oldS);
+                console.log(newS);
+                //console.log(m);
 
-            console.log('\nMATCHES');
-            console.log(matches);
-            console.log('\nOPS');
-            console.log(out);
+                console.log('\nMATCHES');
+                console.log(matches);
+                console.log('\nOPS');
+                console.log(out);
 
-            throw e;
-        }
-    });*/
+                throw e;
+            }
+        });
+    }
 
     return out.filter(function (x) { return x.toRemove || x.toInsert; });
 };

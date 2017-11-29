@@ -86,7 +86,7 @@ var fuzzCycle = function (doc, hash) {
     var p = Patch.create(hash);
     Array.prototype.push.apply(p.operations, ops);
     var doc2 = Patch.apply(p, doc);
-    console.log(doc2);
+    //console.log(doc2);
 
     var ops2 = Diff.diff(doc, doc2);
 
@@ -121,8 +121,8 @@ var fuzzCycle = function (doc, hash) {
 var fuzz = function (cycles, callback) {
     for (var i = 0; i < 10; i++) {
         var doc = chooseThreeWords();
-        console.log('DOC');
-        console.log(doc);
+        //console.log('DOC');
+        //console.log(doc);
         //Math.random() * Common.randomASCII(Math.random() * 9000 + 1000);
         var hash = Sha.hex_sha256(doc);
         for (var j = 0; j < cycles; j++) {
