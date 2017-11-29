@@ -54,31 +54,72 @@ var isCompatible = function (m1, m2) {
     return true;
 };
 
-var isBetter = function (test, reference) {
-    var testVal = (test.length * 2) - test.oldIndex - test.newIndex;
-    var refVal = (reference.length * 2) - reference.oldIndex - reference.newIndex;
-    return testVal > refVal;
+var scoreMatch = function (m) {
+    return (m.length * 2) - m.oldIndex - m.newIndex;
 };
 
+/*  iterate backwards through and array, splicing out indices to remove
+    the indices to remove MUST be in ascending order
+    otherwise this could remove the wrong values
+    operates strictly via side-effects */
+var removeAscendingIndices = function (A, toRemove) {
+    if (!toRemove.length) { return; }
+    for (var j = toRemove.length - 1; j > -1; j--) {
+        A.splice(toRemove[j], 1);
+    }
+};
+
+/*  given a candidate match and the list of pending matches
+    evaluate whether the candidate conflicts with existing matches
+    if the candidate is determined to be a worse match than existing matches
+        return false
+    otherwise return the list of candidates which should be replaced
+
+    returns either:
+    false => the candidate is incompatible, and its conflicts are more valuable
+    empty array => truthy, but there is nothing to remove (no conflicts)
+    array => conflicting elements to replace with the candidate
+*/
+var listInferiorCandidates = function (current, pending) {
+    var score_m = scoreMatch(current);
+    var score_rest = 0;
+    var toRemove = [];
+
+    var l = pending.length;
+    for (var i = 0; i < l; i++) {
+        if (isCompatible(current, pending[i])) { continue; }
+        toRemove.push(i);
+        score_rest += scoreMatch(pending[i]);
+        if (score_rest > score_m) { return false; }
+    }
+
+    return toRemove;
+};
+
+/*  called with all the matches, including the common start and common end, if they exist...
+
+    A: Common start (should not be replaced)
+    B: potential operations
+    B': satisfactory set of operations
+    C: Common end (should not be replaced)
+
+    this implementation does not do anything special to protect A and C
+    it is believed that the way matches are produced, they should not be removed.
+*/
 var reduceMatches = function (matches) {
     // ascending sort
     matches.sort(function (a, b) { return (a.oldIndex + a.newIndex) - (b.oldIndex + b.newIndex); });
     var out = [];
-    var i = 0;
-    var m = matches[i++];
-    if (!m) { return out; }
-    while (i < matches.length) {
-        var mn = matches[i++];
-        if (!isCompatible(mn, m)) {
-            //console.log(JSON.stringify(mn) + ' is incompatible with ' + JSON.stringify(m));
-            // If mn is "better" than m, replace m with mn
-            if (!isBetter(mn, m)) { continue; }
-        } else {
-            out.push(m);
+
+    var l_m = matches.length;
+    var toRemove;
+    for (var i = 0; i < l_m; i++) {
+        toRemove = listInferiorCandidates(matches[i], out);
+        if (toRemove) {
+            removeAscendingIndices(out, toRemove);
+            out.push(matches[i]);
         }
-        m = mn;
     }
-    out.push(m);
     return out;
 };
 
@@ -138,7 +179,28 @@ var matchesToOps = function (oldS, newS, matches) {
         oldI = m.oldIndex + m.length;
         newI = m.newIndex + m.length;
     }
-    out.push(Operation.create(oldI, oldS.length - oldI, newS.slice(newI)));
+    out.push(Operation.create(oldI, oldS.length - oldI, newS.slice(newI))); // does not check ops
+
+    if (Common.PARANOIA) {
+        out.forEach(function (op) {
+            if (!op.toRemove || !op.toInsert) { return; }
+            try { Operation.check(op); }
+            catch (e) {
+                console.log('\nINVALID OPERATION');
+                console.log(oldS);
+                console.log(newS);
+                //console.log(m);
+
+                console.log('\nMATCHES');
+                console.log(matches);
+                console.log('\nOPS');
+                console.log(out);
+
+                throw e;
+            }
+        });
+    }
+
     return out.filter(function (x) { return x.toRemove || x.toInsert; });
 };
 
@@ -166,7 +228,7 @@ var getCommonEnd = function (oldS, newS, commonBeginning) {
     return { newIndex: newEnd + 1, oldIndex: oldEnd + 1, length: commonEnd };
 };
 
-var diff = module.exports.diff = function (
+module.exports.diff = function (
     oldS /*:string*/,
     newS /*:string*/,
     blockSize /*:?number*/ ) /*:Array<Operation_t>*/
@@ -195,16 +257,17 @@ var diff = module.exports.diff = function (
     }
     if (ce.length) { matches.push(ce); }
     var reduced = reduceMatches(matches);
-    var ops = matchesToOps(oldS, newS, reduced);
+    var ops = matchesToOps(oldS, newS, reduced); // HERE produced operation with negative toRemove
     if (Operation.applyMulti(ops, oldS) !== newS) {
         // use 'self' instead of 'window' for node and webworkers
-        self.ChainPad_Diff_DEBUG = {
+        var x = (typeof(global) !== 'undefined'? global: self).ChainPad_Diff_DEBUG = {
             oldS: oldS,
             newS: newS,
             matches: matches,
             reduced: reduced,
             ops: ops
         };
+        console.log(x);
         console.log("diff did not make a sane patch, check window.ChainPad_Diff_DEBUG");
         ops = matchesToOps(oldS, newS, [cb, ce]);
         if (Operation.applyMulti(ops, oldS) !== newS) {
@@ -213,6 +276,8 @@ var diff = module.exports.diff = function (
     }
     return ops;
 };
+
+
 
 },
 "Patch.js": function(module, exports, require){
@@ -304,7 +369,7 @@ var check = Patch.check = function (patch /*:any*/, docLength_opt /*:?number*/) 
     return patch;
 };
 
-var toObj = Patch.toObj = function (patch /*:Patch_t*/) {
+Patch.toObj = function (patch /*:Patch_t*/) {
     if (Common.PARANOIA) { check(patch); }
     var out /*:Array<Operation_Packed_t|Sha256_t>*/ = new Array(patch.operations.length+1);
     var i;
@@ -315,7 +380,7 @@ var toObj = Patch.toObj = function (patch /*:Patch_t*/) {
     return out;
 };
 
-var fromObj = Patch.fromObj = function (obj /*:Patch_Packed_t*/, isCheckpoint /*:?boolean*/) {
+Patch.fromObj = function (obj /*:Patch_Packed_t*/, isCheckpoint /*:?boolean*/) {
     Common.assert(Array.isArray(obj) && obj.length > 0);
     var patch = create(Sha.check(obj[obj.length-1]), isCheckpoint);
     var i;
@@ -358,7 +423,7 @@ var addOperation = Patch.addOperation = function (patch /*:Patch_t*/, op /*:Oper
     if (Common.PARANOIA) { check(patch); }
 };
 
-var createCheckpoint = Patch.createCheckpoint = function (
+Patch.createCheckpoint = function (
     parentContent /*:string*/,
     checkpointContent /*:string*/,
     parentContentHash_opt /*:?string*/)
@@ -382,7 +447,7 @@ var clone = Patch.clone = function (patch /*:Patch_t*/) {
     return out;
 };
 
-var merge = Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/) {
+Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/) {
     if (Common.PARANOIA) {
         check(oldPatch);
         check(newPatch);
@@ -403,7 +468,7 @@ var merge = Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/
     return oldPatch;
 };
 
-var apply = Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
+Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
@@ -417,7 +482,7 @@ var apply = Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
     return newDoc;
 };
 
-var lengthChange = Patch.lengthChange = function (patch /*:Patch_t*/)
+Patch.lengthChange = function (patch /*:Patch_t*/)
 {
     if (Common.PARANOIA) { check(patch); }
     var out = 0;
@@ -427,7 +492,7 @@ var lengthChange = Patch.lengthChange = function (patch /*:Patch_t*/)
     return out;
 };
 
-var invert = Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
+Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
@@ -459,7 +524,7 @@ var invert = Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
     return rpatch;
 };
 
-var simplify = Patch.simplify = function (
+Patch.simplify = function (
     patch /*:Patch_t*/,
     doc /*:string*/,
     operationSimplify /*:Operation_Simplify_t*/ )
@@ -490,7 +555,7 @@ var simplify = Patch.simplify = function (
     return spatch;
 };
 
-var equals = Patch.equals = function (patchA /*:Patch_t*/, patchB /*:Patch_t*/) {
+Patch.equals = function (patchA /*:Patch_t*/, patchB /*:Patch_t*/) {
     if (patchA.operations.length !== patchB.operations.length) { return false; }
     for (var i = 0; i < patchA.operations.length; i++) {
         if (!Operation.equals(patchA.operations[i], patchB.operations[i])) { return false; }
@@ -502,7 +567,7 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform = Patch.transform = function (
+Patch.transform = function (
     toTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
@@ -551,7 +616,7 @@ var transform = Patch.transform = function (
     return out;
 };
 
-var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
+Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     Common.assert(typeof(doc) === 'string');
     opCount = opCount || (Math.floor(Math.random() * 30) + 1);
     var patch = create(Sha.hex_sha256(doc));
@@ -672,31 +737,33 @@ Object.freeze(module.exports);
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 "use strict";
-var DEBUG = module.exports.DEBUG =
+module.exports.DEBUG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
 var PARANOIA = module.exports.PARANOIA =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_PARANOIA']);
 
 /* Good testing but slooooooooooow */
-var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
+module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG']);
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-var TESTING = module.exports.TESTING =
+module.exports.TESTING =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
 
-var assert = module.exports.assert = function (expr /*:any*/) {
+module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
 
-var isUint = module.exports.isUint = function (integer /*:number*/) {
+module.exports.global = typeof(global) === 'undefined'? self: global;
+
+module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
         (Math.floor(integer) === integer) &&
         (integer >= 0);
 };
 
-var randomASCII = module.exports.randomASCII = function (length /*:number*/) {
+module.exports.randomASCII = function (length /*:number*/) {
     var content = [];
     for (var i = 0; i < length; i++) {
         content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 57 + 65 );
@@ -704,7 +771,7 @@ var randomASCII = module.exports.randomASCII = function (length /*:number*/) {
     return content.join('');
 };
 
-var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
+module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     if (PARANOIA && typeof(a) !== 'string') { throw new Error(); }
     if (PARANOIA && typeof(b) !== 'string') { throw new Error(); }
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );
@@ -798,7 +865,7 @@ Object.freeze(module.exports);
  */
 "use strict";
 var Common = require('./Common');
-var Operation = require('./Operation');
+//var Operation = require('./Operation');
 var Patch = require('./Patch');
 var Sha = require('./sha256');
 
@@ -860,7 +927,7 @@ var create = Message.create = function (
 };
 
 // $FlowFixMe doesn't like the toString()
-var toString = Message.toString = function (msg /*:Message_t*/) {
+var toString = Message.toStr = Message.toString = function (msg /*:Message_t*/) {
     if (Common.PARANOIA) { check(msg); }
     if (msg.messageType === PATCH || msg.messageType === CHECKPOINT) {
         if (!msg.content) { throw new Error(); }
@@ -870,7 +937,7 @@ var toString = Message.toString = function (msg /*:Message_t*/) {
     }
 };
 
-var fromString = Message.fromString = function (str /*:string*/) /*:Message_t*/ {
+Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var m = JSON.parse(str);
     if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
     var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
@@ -913,8 +980,8 @@ var Sha = module.exports.Sha = require('./sha256');
 var Diff = module.exports.Diff = require('./Diff');
 
 var TextTransformer = module.exports.TextTransformer = require('./transform/TextTransformer');
-var NaiveJSONTransformer = module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
-var SmartJSONTransformer = module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
+module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
+module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -965,7 +1032,7 @@ var unschedule = function (realtime, schedule) {
     clearTimeout(schedule);
 };
 
-var onMessage = function (realtime, message, callback) {
+var onMessage = function (realtime, message, callback /*:(?string)=>void*/) {
     if (!realtime.messageHandlers.length) {
         callback("no onMessage() handler registered");
     }
@@ -977,12 +1044,12 @@ var onMessage = function (realtime, message, callback) {
             });
         });
     } catch (e) {
-        callback(e);
+        callback(e.stack);
     }
 };
 
 var sendMessage = function (realtime, msg, callback, timeSent) {
-    var strMsg = Message.toString(msg);
+    var strMsg = Message.toStr(msg);
 
     onMessage(realtime, strMsg, function (err) {
         if (err) {
@@ -1007,7 +1074,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
         var pending = realtime.pending;
         if (pending) {
-            var timeSent = pending.timeSent;
+            //var timeSent = pending.timeSent;
             realtime.pending = null;
             realtime.syncSchedule = -1;
         }
@@ -1681,7 +1748,28 @@ var getContentAtState = function (realtime, msg) {
     return { error: undefined, doc: doc };
 };
 
-var wrapMessage = function (realtime, msg) {
+/*::
+export type ChainPad_BlockContent_t = {
+    error: ?string,
+    doc: ?string
+};
+export type ChainPad_Block_t = {
+    type: 'Block',
+    hashOf: string,
+    lastMsgHash: string,
+    isCheckpoint: boolean,
+    getParent: ()=>?ChainPad_Block_t,
+    getContent: ()=>{
+        error: ?string,
+        doc: ?string
+    },
+    getPatch: ()=>Patch_t,
+    getInversePatch: ()=>Patch_t,
+    equals: (?ChainPad_Block_t, ?any)=>boolean
+};
+*/
+
+var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
     return Object.freeze({
         type: 'Block',
         hashOf: msg.hashOf,
@@ -1696,8 +1784,8 @@ var wrapMessage = function (realtime, msg) {
         getInversePatch: function () { return Patch.clone(inversePatch(msg.content)); },
         equals: function (block, msgOpt) {
             if (msgOpt) { return msg === msgOpt; }
-            Common.assert(block.type === 'Block');
-            return block.equals(null, msg);
+            if (!block || typeof(block) !== 'object' || block.type !== 'Block') { return false; }
+            return block.equals(block, msg);
         }
     });
 };
@@ -1718,9 +1806,11 @@ var mkConfig = function (config) {
         noPrune: config.noPrune,
         patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
-        validateContent: config.validateContent || function () { return true; },
+        validateContent: config.validateContent || function (x) { x = x; return true; },
         diffFunction: config.diffFunction ||
-            function (strA, strB) { return Diff.diff(strA, strB, config.diffBlockSize); },
+            function (strA, strB /*:string*/) {
+                return Diff.diff(strA, strB, config.diffBlockSize);
+            },
     });
 };
 
@@ -1909,13 +1999,13 @@ var create = Operation.create = function (
     return Object.freeze(out);
 };
 
-var toObj = Operation.toObj = function (op /*:Operation_t*/) {
+Operation.toObj = function (op /*:Operation_t*/) {
     if (Common.PARANOIA) { check(op); }
     return [op.offset,op.toRemove,op.toInsert];
 };
 
  // Allow any as input because we assert its type internally..
-var fromObj = Operation.fromObj = function (obj /*:any*/) {
+Operation.fromObj = function (obj /*:any*/) {
     Common.assert(Array.isArray(obj) && obj.length === 3);
     return create(obj[0], obj[1], obj[2]);
 };
@@ -1933,7 +2023,7 @@ var apply = Operation.apply = function (op /*:Operation_t*/, doc /*:string*/)
     return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
-var applyMulti = Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
+Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
 {
     for (var i = ops.length - 1; i >= 0; i--) { doc = apply(ops[i], doc); }
     return doc;
@@ -1966,7 +2056,7 @@ var hasSurrogate = Operation.hasSurrogate = function(str /*:string*/) {
  *            sunk.
  * tl;dr can't touch this
  */
-var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
+Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
@@ -2001,13 +2091,13 @@ var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string
     return create(opOffset, opToRemove, opToInsert);
 };
 
-var equals = Operation.equals = function (opA /*:Operation_t*/, opB /*:Operation_t*/) {
+Operation.equals = function (opA /*:Operation_t*/, opB /*:Operation_t*/) {
     return (opA.toRemove === opB.toRemove
         && opA.toInsert === opB.toInsert
         && opA.offset === opB.offset);
 };
 
-var lengthChange = Operation.lengthChange = function (op /*:Operation_t*/)
+Operation.lengthChange = function (op /*:Operation_t*/)
 {
     if (Common.PARANOIA) { check(op); }
     return op.toInsert.length - op.toRemove;
@@ -2016,7 +2106,7 @@ var lengthChange = Operation.lengthChange = function (op /*:Operation_t*/)
 /*
  * @return the merged operation OR null if the result of the merger is a noop.
  */
-var merge = Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*:Operation_t*/) {
+Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(newOpOrig);
         check(oldOpOrig);
@@ -2072,7 +2162,7 @@ var merge = Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*
  * If the new operation deletes what the old op inserted or inserts content in the middle of
  * the old op's content or if they abbut one another, they should be merged.
  */
-var shouldMerge = Operation.shouldMerge = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/)
+Operation.shouldMerge = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/)
 {
     if (Common.PARANOIA) {
         check(oldOp);
@@ -2094,7 +2184,7 @@ var shouldMerge = Operation.shouldMerge = function (oldOp /*:Operation_t*/, newO
  *                the rebased clone of newOp if it needs rebasing, or
  *                null if newOp and oldOp must be merged.
  */
-var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/) {
+Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(oldOp);
         check(newOp);
@@ -2108,7 +2198,7 @@ var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Opera
 };
 
 /** Used for testing. */
-var random = Operation.random = function (docLength /*:number*/) {
+Operation.random = function (docLength /*:number*/) {
     Common.assert(Common.isUint(docLength));
     var offset = Math.floor(Math.random() * 100000000 % docLength) || 0;
     var toRemove = Math.floor(Math.random() * 100000000 % (docLength - offset)) || 0;
@@ -3292,14 +3382,13 @@ import type { Operation_t } from '../Operation'
 import type { Patch_t } from '../Patch' 
 */
 var Operation = require('../Operation');
-var Patch = require('../Patch');
-var Sha = require('../sha256');
+//var Patch = require('../Patch');
+//var Sha = require('../sha256');
 var Common = require('../Common');
 
 var transformOp0 = function (
     toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    text /*:string*/ )
+    transformBy /*:Operation_t*/)
 {
     if (toTransform.offset > transformBy.offset) {
         if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
@@ -3330,19 +3419,18 @@ var transformOp0 = function (
 
 var transformOp = function (
     toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    text /*:string*/ )
+    transformBy /*:Operation_t*/)
 {
     if (Common.PARANOIA) {
         Operation.check(toTransform);
         Operation.check(transformBy);
     }
-    var result = transformOp0(toTransform, transformBy, text);
+    var result = transformOp0(toTransform, transformBy);
     if (Common.PARANOIA && result) { Operation.check(result); }
     return result;
 };
 
-var transform = module.exports = function (
+module.exports = function (
     opsToTransform /*:Array<Operation_t>*/,
     opsTransformBy /*:Array<Operation_t>*/,
     doc /*:string*/ ) /*:Array<Operation_t>*/
@@ -3363,7 +3451,7 @@ var transform = module.exports = function (
                 );
             }
             try {
-                tti = transformOp(tti, opsTransformBy[j], text);
+                tti = transformOp(tti, opsTransformBy[j]);
             } catch (e) {
                 console.error("The pluggable transform function threw an error, " +
                     "failing operational transformation");
@@ -3406,10 +3494,10 @@ var transform = module.exports = function (
 
 var Sortify = require('json.sortify');
 var Diff = require('../Diff');
-var Patch = require('../Patch');
+//var Patch = require('../Patch');
 var Operation = require('../Operation');
 var TextTransformer = require('./TextTransformer');
-var Sha = require('../sha256');
+//var Sha = require('../sha256');
 
 /*::
 import type { Operation_t } from '../Operation';
@@ -3446,7 +3534,7 @@ var deepEqual = function (A /*:any*/, B /*:any*/) {
         var k_A = Object.keys(A);
         var k_B = Object.keys(B);
         return k_A.length === k_B.length &&
-            !k_A.some(function (a, i) { return !deepEqual(A[a], B[a]); }) &&
+            !k_A.some(function (a) { return !deepEqual(A[a], B[a]); }) &&
             !k_B.some(function (b) { return !(b in A); });
     } else if (t_A === 'array') {
         return A.length === B.length &&
@@ -3456,20 +3544,54 @@ var deepEqual = function (A /*:any*/, B /*:any*/) {
     }
 };
 
-var operation = function (type, path, value, prev, other) {
-    var res = {
-        type: type,
-        path: path,
-        value: value,
-    };
+/*::
+export type SmartJSONTransformer_Replace_t = {
+    type: 'replace',
+    path: Array<string|number>,
+    value: any,
+    prev: any
+};
+export type SmartJSONTransformer_Splice_t = {
+    type: 'splice',
+    path: Array<string|number>,
+    value: any,
+    offset: number,
+    removals: number
+};
+export type SmartJSONTransformer_Remove_t = {
+    type: 'remove',
+    path: Array<string|number>,
+    value: any
+};
+export type SmartJSONTransformer_Operation_t =
+    SmartJSONTransformer_Replace_t | SmartJSONTransformer_Splice_t | SmartJSONTransformer_Remove_t;
+*/
+
+var operation = function (type, path, value, prev, other) /*:SmartJSONTransformer_Operation_t*/ {
     if (type === 'replace') {
-        res.prev = prev;
+        return ({
+            type: 'replace',
+            path: path,
+            value: value,
+            prev: prev,
+        } /*:SmartJSONTransformer_Replace_t*/);
     } else if (type === 'splice') {
-        res.offset = prev;
-        res.removals = other;
+        if (typeof(prev) !== 'number') { throw new Error(); }
+        if (typeof(other) !== 'number') { throw new Error(); }
+        return ({
+            type: 'splice',
+            path: path,
+            value: value,
+            offset: prev,
+            removals: other
+        } /*:SmartJSONTransformer_Splice_t*/);
     } else if (type !== 'remove') { throw new Error('expected a removal'); }
     // if it's not a replace or splice, it's a 'remove'
-    return res;
+    return ({
+        type: 'remove',
+        path: path,
+        value: value,
+    } /*:SmartJSONTransformer_Remove_t*/);
 };
 
 var replace = function (ops, path, to, from) {
@@ -3785,9 +3907,10 @@ var diff = function (A, B) {
     return ops;
 };
 
-var applyOp = function (O, op) {
+var applyOp = function (O, op /*:SmartJSONTransformer_Operation_t*/) {
     var path;
     var key;
+    var result;
     switch (op.type) {
         case "replace":
             key = op.path[op.path.length -1];
@@ -3816,7 +3939,8 @@ var applyOp = function (O, op) {
         case "remove":
             key = op.path[op.path.length -1];
             path = op.path.slice(0, op.path.length - 1);
-            delete find(O, path)[key];
+            result = find(O, path);
+            if (typeof(result) !== 'undefined') { delete result[key]; }
             break;
         default:
             throw new Error('unsupported operation type');
@@ -3869,7 +3993,7 @@ var arbiter = function (p_a, p_b, c) {
     p_b.value = x3;
 };
 
-var transform = module.exports = function (
+module.exports = function (
     opsToTransform /*:Array<Operation_t>*/,
     opsTransformBy /*:Array<Operation_t>*/,
     s_orig /*:string*/ ) /*:Array<Operation_t>*/
@@ -3914,7 +4038,6 @@ module.exports._ = {
 },
 "transform/NaiveJSONTransformer.js": function(module, exports, require){
 /*@flow*/
-/* global window */
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -3934,20 +4057,20 @@ module.exports._ = {
 "use strict";
 
 var TextTransformer = require('./TextTransformer');
-var ChainPad = require('../ChainPad');
+//var ChainPad = require('../ChainPad');
 var Operation = require('../Operation');
+var Common = require('../Common');
 
 /*::
 import type { Operation_t } from '../Operation';
 */
 
-var transform = module.exports = function (
+module.exports = function (
     opsToTransform /*:Array<Operation_t>*/,
     opsTransformBy /*:Array<Operation_t>*/,
     text /*:string*/ ) /*:Array<Operation_t>*/
 {
-    var window = window || {};
-    var DEBUG = window.REALTIME_DEBUG = window.REALTIME_DEBUG || {};
+    var DEBUG = Common.global.REALTIME_DEBUG = Common.global.REALTIME_DEBUG || {};
 
     var resultOps, text2, text3;
     try {
@@ -4000,6 +4123,7 @@ var transform = module.exports = function (
     // return an empty patch in case we can't do anything else
     return [];
 };
+
 }
 };
 r.m[1] = {
