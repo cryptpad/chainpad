@@ -22,14 +22,13 @@ import type { Operation_t } from '../Operation'
 import type { Patch_t } from '../Patch' 
 */
 var Operation = require('../Operation');
-var Patch = require('../Patch');
-var Sha = require('../sha256');
+//var Patch = require('../Patch');
+//var Sha = require('../sha256');
 var Common = require('../Common');
 
 var transformOp0 = function (
     toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    text /*:string*/ )
+    transformBy /*:Operation_t*/)
 {
     if (toTransform.offset > transformBy.offset) {
         if (toTransform.offset > transformBy.offset + transformBy.toRemove) {
@@ -60,19 +59,18 @@ var transformOp0 = function (
 
 var transformOp = function (
     toTransform /*:Operation_t*/,
-    transformBy /*:Operation_t*/,
-    text /*:string*/ )
+    transformBy /*:Operation_t*/)
 {
     if (Common.PARANOIA) {
         Operation.check(toTransform);
         Operation.check(transformBy);
     }
-    var result = transformOp0(toTransform, transformBy, text);
+    var result = transformOp0(toTransform, transformBy);
     if (Common.PARANOIA && result) { Operation.check(result); }
     return result;
 };
 
-var transform = module.exports = function (
+module.exports = function (
     opsToTransform /*:Array<Operation_t>*/,
     opsTransformBy /*:Array<Operation_t>*/,
     doc /*:string*/ ) /*:Array<Operation_t>*/
@@ -93,7 +91,7 @@ var transform = module.exports = function (
                 );
             }
             try {
-                tti = transformOp(tti, opsTransformBy[j], text);
+                tti = transformOp(tti, opsTransformBy[j]);
             } catch (e) {
                 console.error("The pluggable transform function threw an error, " +
                     "failing operational transformation");

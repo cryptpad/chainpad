@@ -17,7 +17,7 @@
 var Glue = require('gluejs');
 var Fs = require('fs');
 var nThen = require('nthen');
-var Os = require('os');
+//var Os = require('os');
 
 var cycles = 1;
 var tests = [];
@@ -84,10 +84,10 @@ nThen(function (waitFor) {
             nt(waitFor());
         }));
     });
-}).nThen(function (waitFor) {
+}).nThen(function () {
     console.log("Tests passed.");
     console.log('in ' + (new Date().getTime() - timeOne));
-}).nThen(function (waitFor) {
+}).nThen(function () {
 
     var g = new Glue();
     g.basepath('./client');

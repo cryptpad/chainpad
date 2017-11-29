@@ -132,7 +132,7 @@ var fuzz = function (cycles, callback) {
     callback();
 };
 
-var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
+module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     console.log('diff test');
     nThen(function (waitFor) {
         fuzz(100 || cycles, waitFor());

@@ -22,13 +22,13 @@ testNames.forEach(function (file) {
         console.log("\n\nRunning Test " + file + "\n\n");
         nThen(function (waitFor) {
             test.main(cycles, waitFor());
-        }).nThen(function (waitFor) {
+        }).nThen(function () {
             console.log("\n\nCompleted Test " + file + "\n\n");
         }).nThen(waitFor());
     }).nThen;
 });
 
-nt(function (waitFor) {
+nt(function () {
     console.log('Done');
     console.log('in ' + (new Date().getTime() - timeOne));
 });

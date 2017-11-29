@@ -57,13 +57,13 @@ var create = Operation.create = function (
     return Object.freeze(out);
 };
 
-var toObj = Operation.toObj = function (op /*:Operation_t*/) {
+Operation.toObj = function (op /*:Operation_t*/) {
     if (Common.PARANOIA) { check(op); }
     return [op.offset,op.toRemove,op.toInsert];
 };
 
  // Allow any as input because we assert its type internally..
-var fromObj = Operation.fromObj = function (obj /*:any*/) {
+Operation.fromObj = function (obj /*:any*/) {
     Common.assert(Array.isArray(obj) && obj.length === 3);
     return create(obj[0], obj[1], obj[2]);
 };
@@ -81,7 +81,7 @@ var apply = Operation.apply = function (op /*:Operation_t*/, doc /*:string*/)
     return doc.substring(0,op.offset) + op.toInsert + doc.substring(op.offset + op.toRemove);
 };
 
-var applyMulti = Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
+Operation.applyMulti = function (ops /*:Array<Operation_t>*/, doc /*:string*/)
 {
     for (var i = ops.length - 1; i >= 0; i--) { doc = apply(ops[i], doc); }
     return doc;
@@ -114,7 +114,7 @@ var hasSurrogate = Operation.hasSurrogate = function(str /*:string*/) {
  *            sunk.
  * tl;dr can't touch this
  */
-var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
+Operation.simplify = function (op /*:Operation_t*/, doc /*:string*/) {
     if (Common.PARANOIA) {
         check(op);
         Common.assert(typeof(doc) === 'string');
@@ -149,13 +149,13 @@ var simplify = Operation.simplify = function (op /*:Operation_t*/, doc /*:string
     return create(opOffset, opToRemove, opToInsert);
 };
 
-var equals = Operation.equals = function (opA /*:Operation_t*/, opB /*:Operation_t*/) {
+Operation.equals = function (opA /*:Operation_t*/, opB /*:Operation_t*/) {
     return (opA.toRemove === opB.toRemove
         && opA.toInsert === opB.toInsert
         && opA.offset === opB.offset);
 };
 
-var lengthChange = Operation.lengthChange = function (op /*:Operation_t*/)
+Operation.lengthChange = function (op /*:Operation_t*/)
 {
     if (Common.PARANOIA) { check(op); }
     return op.toInsert.length - op.toRemove;
@@ -164,7 +164,7 @@ var lengthChange = Operation.lengthChange = function (op /*:Operation_t*/)
 /*
  * @return the merged operation OR null if the result of the merger is a noop.
  */
-var merge = Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*:Operation_t*/) {
+Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(newOpOrig);
         check(oldOpOrig);
@@ -220,7 +220,7 @@ var merge = Operation.merge = function (oldOpOrig /*:Operation_t*/, newOpOrig /*
  * If the new operation deletes what the old op inserted or inserts content in the middle of
  * the old op's content or if they abbut one another, they should be merged.
  */
-var shouldMerge = Operation.shouldMerge = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/)
+Operation.shouldMerge = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/)
 {
     if (Common.PARANOIA) {
         check(oldOp);
@@ -242,7 +242,7 @@ var shouldMerge = Operation.shouldMerge = function (oldOp /*:Operation_t*/, newO
  *                the rebased clone of newOp if it needs rebasing, or
  *                null if newOp and oldOp must be merged.
  */
-var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/) {
+Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Operation_t*/) {
     if (Common.PARANOIA) {
         check(oldOp);
         check(newOp);
@@ -256,7 +256,7 @@ var rebase = Operation.rebase = function (oldOp /*:Operation_t*/, newOp /*:Opera
 };
 
 /** Used for testing. */
-var random = Operation.random = function (docLength /*:number*/) {
+Operation.random = function (docLength /*:number*/) {
     Common.assert(Common.isUint(docLength));
     var offset = Math.floor(Math.random() * 100000000 % docLength) || 0;
     var toRemove = Math.floor(Math.random() * 100000000 % (docLength - offset)) || 0;

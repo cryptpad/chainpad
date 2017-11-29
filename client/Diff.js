@@ -18,7 +18,7 @@
 "use strict";
 
 var Operation = require('./Operation');
-var Common = require('./Common');
+//var Common = require('./Common');
 
 /*::
 import type { Operation_t } from './Operation';
@@ -49,35 +49,14 @@ var isCompatible = function (m1, m2) {
     return true;
 };
 
-var isCompatibleWithPrevious = function (test, list) {
-    var l = list.length;
-    for (var i = 0; i < l; i++) {
-        if (!isCompatible(test, list[i])) { return false; }
-    }
-    return true;
-};
-
-if (isCompatible({
-    newIndex: 5,
-    oldIndex: 3,
-    length: 9,
-}, {
-    newIndex: 27,
-    oldIndex: 8,
-    length: 12,
-})) { throw new Error('fuck'); }
-
-
-var isBetter = function (test, reference) {
-    var testVal = (test.length * 2) - test.oldIndex - test.newIndex;
-    var refVal = (reference.length * 2) - reference.oldIndex - reference.newIndex;
-    return testVal > refVal;
-};
-
 var scoreMatch = function (m) {
     return (m.length * 2) - m.oldIndex - m.newIndex;
 };
 
+/*  iterate backwards through and array, splicing out indices to remove
+    the indices to remove MUST be in ascending order
+    otherwise this could remove the wrong values
+    operates strictly via side-effects */
 var removeIndices = function (A, toRemove) {
     if (!toRemove.length) { return; }
     for (var j = toRemove.length - 1; j > -1; j--) {
@@ -85,7 +64,15 @@ var removeIndices = function (A, toRemove) {
     }
 };
 
-/*  returns either false, or the list of indices to remove
+/*  given the list of pending matches, and a candidate match,
+    determine whether the candidate is compatible with the entire pending list
+    if it is not, determine if there exists a set of pending candidates which
+    collectively are not as valuable as the candidate.
+
+    returns either:
+    false => the candidate is incompatible, and its conflicts are more valuable
+    empty array => truthy, but there is nothing to remove (no conflicts)
+    array => conflicting elements to replace with the candidate
 */
 var worseThanMatch = function (pending, current) {
     var score_m = scoreMatch(current);
@@ -233,7 +220,7 @@ var getCommonEnd = function (oldS, newS, commonBeginning) {
     return { newIndex: newEnd + 1, oldIndex: oldEnd + 1, length: commonEnd };
 };
 
-var diff = module.exports.diff = function (
+module.exports.diff = function (
     oldS /*:string*/,
     newS /*:string*/,
     blockSize /*:?number*/ ) /*:Array<Operation_t>*/
@@ -281,14 +268,5 @@ var diff = module.exports.diff = function (
     }
     return ops;
 };
-
-(function () {
-var oldS = 'pewpewpewpewbangpewfoobang';
-var newS = 'pewpbangpewpewpewpewfoobangewpewbangpewfoobangpewboomboombangbangng';
-
-var d = diff(oldS, newS, 8);
-
-}());
-
 
 

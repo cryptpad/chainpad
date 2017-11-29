@@ -86,7 +86,7 @@ var check = Patch.check = function (patch /*:any*/, docLength_opt /*:?number*/) 
     return patch;
 };
 
-var toObj = Patch.toObj = function (patch /*:Patch_t*/) {
+Patch.toObj = function (patch /*:Patch_t*/) {
     if (Common.PARANOIA) { check(patch); }
     var out /*:Array<Operation_Packed_t|Sha256_t>*/ = new Array(patch.operations.length+1);
     var i;
@@ -97,7 +97,7 @@ var toObj = Patch.toObj = function (patch /*:Patch_t*/) {
     return out;
 };
 
-var fromObj = Patch.fromObj = function (obj /*:Patch_Packed_t*/, isCheckpoint /*:?boolean*/) {
+Patch.fromObj = function (obj /*:Patch_Packed_t*/, isCheckpoint /*:?boolean*/) {
     Common.assert(Array.isArray(obj) && obj.length > 0);
     var patch = create(Sha.check(obj[obj.length-1]), isCheckpoint);
     var i;
@@ -140,7 +140,7 @@ var addOperation = Patch.addOperation = function (patch /*:Patch_t*/, op /*:Oper
     if (Common.PARANOIA) { check(patch); }
 };
 
-var createCheckpoint = Patch.createCheckpoint = function (
+Patch.createCheckpoint = function (
     parentContent /*:string*/,
     checkpointContent /*:string*/,
     parentContentHash_opt /*:?string*/)
@@ -164,7 +164,7 @@ var clone = Patch.clone = function (patch /*:Patch_t*/) {
     return out;
 };
 
-var merge = Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/) {
+Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/) {
     if (Common.PARANOIA) {
         check(oldPatch);
         check(newPatch);
@@ -185,7 +185,7 @@ var merge = Patch.merge = function (oldPatch /*:Patch_t*/, newPatch /*:Patch_t*/
     return oldPatch;
 };
 
-var apply = Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
+Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
@@ -199,7 +199,7 @@ var apply = Patch.apply = function (patch /*:Patch_t*/, doc /*:string*/)
     return newDoc;
 };
 
-var lengthChange = Patch.lengthChange = function (patch /*:Patch_t*/)
+Patch.lengthChange = function (patch /*:Patch_t*/)
 {
     if (Common.PARANOIA) { check(patch); }
     var out = 0;
@@ -209,7 +209,7 @@ var lengthChange = Patch.lengthChange = function (patch /*:Patch_t*/)
     return out;
 };
 
-var invert = Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
+Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
 {
     if (Common.PARANOIA) {
         check(patch);
@@ -241,7 +241,7 @@ var invert = Patch.invert = function (patch /*:Patch_t*/, doc /*:string*/)
     return rpatch;
 };
 
-var simplify = Patch.simplify = function (
+Patch.simplify = function (
     patch /*:Patch_t*/,
     doc /*:string*/,
     operationSimplify /*:Operation_Simplify_t*/ )
@@ -272,7 +272,7 @@ var simplify = Patch.simplify = function (
     return spatch;
 };
 
-var equals = Patch.equals = function (patchA /*:Patch_t*/, patchB /*:Patch_t*/) {
+Patch.equals = function (patchA /*:Patch_t*/, patchB /*:Patch_t*/) {
     if (patchA.operations.length !== patchB.operations.length) { return false; }
     for (var i = 0; i < patchA.operations.length; i++) {
         if (!Operation.equals(patchA.operations[i], patchB.operations[i])) { return false; }
@@ -284,7 +284,7 @@ var isCheckpointOp = function (op, text) {
     return op.offset === 0 && op.toRemove === text.length && op.toInsert === text;
 };
 
-var transform = Patch.transform = function (
+Patch.transform = function (
     toTransform /*:Patch_t*/,
     transformBy /*:Patch_t*/,
     doc /*:string*/,
@@ -333,7 +333,7 @@ var transform = Patch.transform = function (
     return out;
 };
 
-var random = Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
+Patch.random = function (doc /*:string*/, opCount /*:?number*/) {
     Common.assert(typeof(doc) === 'string');
     opCount = opCount || (Math.floor(Math.random() * 30) + 1);
     var patch = create(Sha.hex_sha256(doc));

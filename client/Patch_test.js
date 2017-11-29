@@ -21,18 +21,18 @@ var Operation = require('./Operation');
 var Patch = require('./Patch');
 var Sha = require('./sha256');
 var nThen = require('nthen');
-var ChainPad = require('./ChainPad');
+//var ChainPad = require('./ChainPad');
 var TextTransformer = require('./transform/TextTransformer');
 
 // These are fuzz tests so increasing this number might catch more errors.
 var OPERATIONS = 1000;
 
 var addOperationConst = function (origDoc, expectedDoc, operations) {
-    var docx = origDoc;
+    //var docx = origDoc;
     var doc = origDoc;
     var patch = Patch.create(Sha.hex_sha256(origDoc));
 
-    var rebasedOps = [];
+    //var rebasedOps = [];
     for (var i = 0; i < operations.length; i++) {
         Patch.addOperation(patch, operations[i]);
         // sanity check
@@ -172,7 +172,7 @@ var simplify = function (cycles, callback) {
     callback();
 };
 
-var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
+module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         simplify(cycles, waitFor());
     }).nThen(function (waitFor) {

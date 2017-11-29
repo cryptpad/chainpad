@@ -20,10 +20,10 @@
 
 var Sortify = require('json.sortify');
 var Diff = require('../Diff');
-var Patch = require('../Patch');
+//var Patch = require('../Patch');
 var Operation = require('../Operation');
 var TextTransformer = require('./TextTransformer');
-var Sha = require('../sha256');
+//var Sha = require('../sha256');
 
 /*::
 import type { Operation_t } from '../Operation';
@@ -60,7 +60,7 @@ var deepEqual = function (A /*:any*/, B /*:any*/) {
         var k_A = Object.keys(A);
         var k_B = Object.keys(B);
         return k_A.length === k_B.length &&
-            !k_A.some(function (a, i) { return !deepEqual(A[a], B[a]); }) &&
+            !k_A.some(function (a) { return !deepEqual(A[a], B[a]); }) &&
             !k_B.some(function (b) { return !(b in A); });
     } else if (t_A === 'array') {
         return A.length === B.length &&
@@ -519,7 +519,7 @@ var arbiter = function (p_a, p_b, c) {
     p_b.value = x3;
 };
 
-var transform = module.exports = function (
+module.exports = function (
     opsToTransform /*:Array<Operation_t>*/,
     opsTransformBy /*:Array<Operation_t>*/,
     s_orig /*:string*/ ) /*:Array<Operation_t>*/

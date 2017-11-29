@@ -3,6 +3,8 @@
     "laxbreak": true,
     "node": true,
     "sub": true,
+    "unused": true,
+    "undef": true,
     "globals": {
         "self": true
     }

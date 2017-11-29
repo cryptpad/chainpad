@@ -24,8 +24,8 @@ var Sha = module.exports.Sha = require('./sha256');
 var Diff = module.exports.Diff = require('./Diff');
 
 var TextTransformer = module.exports.TextTransformer = require('./transform/TextTransformer');
-var NaiveJSONTransformer = module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
-var SmartJSONTransformer = module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
+module.exports.NaiveJSONTransformer = require('./transform/NaiveJSONTransformer');
+module.exports.SmartJSONTransformer = require('./transform/SmartJSONTransformer');
 
 // hex_sha256('')
 var EMPTY_STR_HASH = module.exports.EMPTY_STR_HASH =
@@ -118,7 +118,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
         var pending = realtime.pending;
         if (pending) {
-            var timeSent = pending.timeSent;
+            //var timeSent = pending.timeSent;
             realtime.pending = null;
             realtime.syncSchedule = -1;
         }

@@ -17,31 +17,31 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 "use strict";
-var DEBUG = module.exports.DEBUG =
+module.exports.DEBUG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
 var PARANOIA = module.exports.PARANOIA =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_PARANOIA']);
 
 /* Good testing but slooooooooooow */
-var VALIDATE_ENTIRE_CHAIN_EACH_MSG = module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
+module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG']);
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-var TESTING = module.exports.TESTING =
+module.exports.TESTING =
     (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
 
-var assert = module.exports.assert = function (expr /*:any*/) {
+module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
 
-var isUint = module.exports.isUint = function (integer /*:number*/) {
+module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
         (Math.floor(integer) === integer) &&
         (integer >= 0);
 };
 
-var randomASCII = module.exports.randomASCII = function (length /*:number*/) {
+module.exports.randomASCII = function (length /*:number*/) {
     var content = [];
     for (var i = 0; i < length; i++) {
         content[i] = String.fromCharCode( Math.floor(Math.random()*256) % 57 + 65 );
@@ -49,7 +49,7 @@ var randomASCII = module.exports.randomASCII = function (length /*:number*/) {
     return content.join('');
 };
 
-var strcmp = module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
+module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     if (PARANOIA && typeof(a) !== 'string') { throw new Error(); }
     if (PARANOIA && typeof(b) !== 'string') { throw new Error(); }
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );

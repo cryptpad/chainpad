@@ -17,7 +17,7 @@
  */
 "use strict";
 var Common = require('./Common');
-var Operation = require('./Operation');
+//var Operation = require('./Operation');
 var Patch = require('./Patch');
 var Sha = require('./sha256');
 
@@ -89,7 +89,7 @@ var toString = Message.toStr = Message.toString = function (msg /*:Message_t*/) 
     }
 };
 
-var fromString = Message.fromString = function (str /*:string*/) /*:Message_t*/ {
+Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var m = JSON.parse(str);
     if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
     var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);

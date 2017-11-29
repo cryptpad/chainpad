@@ -44,13 +44,14 @@ var runOperation = function (realtimeFacade, op) {
     realtimeFacade.rt.change(op.offset, op.toRemove, op.toInsert);
 };
 
+/*
 var insert = function (doc, offset, chars) {
     return doc.substring(0,offset) + chars + doc.substring(offset);
 };
 
 var remove = function (doc, offset, count) {
     return doc.substring(0,offset) + doc.substring(offset+count);
-};
+};*/
 
 var registerNode = function (name, initialDoc, conf) {
     conf = ((conf || {}) /*:Object*/);
@@ -272,7 +273,7 @@ var checkVersionInChain = function (callback) {
     rt.start();
 
     var i = 0;
-    var oldUserDoc;
+    //var oldUserDoc;
     var oldAuthDoc;
     var to = xsetInterval(function () {
 // on the 51st change, grab the doc
@@ -448,7 +449,7 @@ var getAuthBlock = function (callback) {
     rt.start();
 
     var i = 0;
-    var oldUserDoc;
+    //var oldUserDoc;
     var oldAuthBlock;
     var oldAuthDoc;
     var to = xsetInterval(function () {
@@ -507,7 +508,7 @@ var benchmarkSync = function (callback) {
     rt.start();
 
     var i = 0;
-    var oldUserDoc;
+    //var oldUserDoc;
     var to = xsetInterval(function () {
         // on the 100th random change, check if getting the state at oldAuthBlock works...
         if (i++ > 200) {
@@ -545,7 +546,7 @@ var benchmarkSync = function (callback) {
     },10);
 };
 
-var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
+module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         startup(waitFor());
     }).nThen(function (waitFor) {

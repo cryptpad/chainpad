@@ -19,19 +19,19 @@
 "use strict";
 
 var TextTransformer = require('./TextTransformer');
-var ChainPad = require('../ChainPad');
+//var ChainPad = require('../ChainPad');
 var Operation = require('../Operation');
 
 /*::
 import type { Operation_t } from '../Operation';
 */
 
-var transform = module.exports = function (
+module.exports = function (
     opsToTransform /*:Array<Operation_t>*/,
     opsTransformBy /*:Array<Operation_t>*/,
     text /*:string*/ ) /*:Array<Operation_t>*/
 {
-    var window = window || {};
+    //var window = window || {};
     var DEBUG = window.REALTIME_DEBUG = window.REALTIME_DEBUG || {};
 
     var resultOps, text2, text3;

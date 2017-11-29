@@ -19,10 +19,10 @@
 "use strict";
 
 var SmartJSONTransformer = require("./SmartJSONTransformer");
-var NaiveJSONTransformer = require("./NaiveJSONTransformer");
+//var NaiveJSONTransformer = require("./NaiveJSONTransformer");
 var TextTransformer = require('./TextTransformer');
 var Diff = require('../Diff');
-var Sortify = require("json.sortify");
+//var Sortify = require("json.sortify");
 var Operation = require('../Operation');
 
 var OT = SmartJSONTransformer._;
@@ -218,7 +218,7 @@ assert(function (expected) {
     var d_A = OT.diff(O, A);
     var d_B = OT.diff(O, B);
 
-    var changes = OT.resolve(d_A, d_B, function (a, b, t) {
+    var changes = OT.resolve(d_A, d_B, function (a, b) {
         a.value = transformText(a.prev, a.value, b.value);
         return true;
     });
@@ -265,7 +265,7 @@ assert(function () {
     return true;
 }, "Expected original objects to be unaffected. all operations must be pure");
 
-var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
+module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     runASSERTS(SmartJSONTransformer);
     if (failed) {
         console.log("\n%s assertions passed and %s failed", assertions, failMessages.length);

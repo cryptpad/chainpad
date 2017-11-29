@@ -20,7 +20,7 @@
 
 var SmartJSONTransformer = require("./SmartJSONTransformer");
 var NaiveJSONTransformer = require("./NaiveJSONTransformer");
-var TextTransformer = require('./TextTransformer');
+//var TextTransformer = require('./TextTransformer');
 var Diff = require('../Diff');
 var Sortify = require("json.sortify");
 var Operation = require('../Operation');
@@ -533,27 +533,6 @@ goesBothWays(
     'ot on the same paragraph failed');
 
 
-var show = function (o) {
-    console.log(JSON.stringify(o, null, 2));
-};
-
-var debugOutput = function (obj) {
-    console.log(obj.o_A);
-
-    var A = JSON.parse(Operation.apply(obj.o_A, obj.O));
-    show(A);
-
-    var B = JSON.parse(Operation.apply(obj.o_B, obj.O));
-    show(B);
-
-    checkTransform(JSON.parse(obj.O),
-        A,
-        B,
-
-        null,
-        'umm');
-};
-
 assert(function (E, jsonTransformer) {
     // define a parent state and create a string representation of it
     var O = ['BODY', {}, [
@@ -646,7 +625,7 @@ assert(function (expected, jsonTransformer) {
 
     var d_C = jsonTransformer(toTransform, transformBy, s_O);
 
-    var s_A = Operation.applyMulti(toTransform, s_O);
+    //var s_A = Operation.applyMulti(toTransform, s_O);
     var s_B = Operation.applyMulti(transformBy, s_O);
 
     var temp = Operation.applyMulti(d_C, s_B);
@@ -727,7 +706,7 @@ basicTest({
     skipIfNaive: true
 });
 
-var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
+module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     runASSERTS(SmartJSONTransformer);
     if (failed) {
         console.log("\n%s assertions passed and %s failed", assertions, failMessages.length);

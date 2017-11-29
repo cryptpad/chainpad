@@ -33,7 +33,7 @@ var applyReversibility = function () {
     (function () {
         for (var i = 1000-1; i >= 0; i--) {
             if (rOperations[i]) {
-                var inverse = Operation.invert(rOperations[i], docx);
+                //var inverse = Operation.invert(rOperations[i], docx);
                 docx = Operation.apply(rOperations[i], docx);
             }
             /*if (JSON.stringify(operations[i]) !== JSON.stringify(inverse)) {
@@ -128,7 +128,7 @@ var emoji = function(callback) {
     callback();
 };
 
-var main = module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
+module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         simplify(cycles, waitFor());
     }).nThen(function (waitFor) {
