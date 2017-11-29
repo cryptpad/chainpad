@@ -1,5 +1,4 @@
 /*@flow*/
-/* global window */
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -21,6 +20,7 @@
 var TextTransformer = require('./TextTransformer');
 //var ChainPad = require('../ChainPad');
 var Operation = require('../Operation');
+var Common = require('../Common');
 
 /*::
 import type { Operation_t } from '../Operation';
@@ -31,8 +31,7 @@ module.exports = function (
     opsTransformBy /*:Array<Operation_t>*/,
     text /*:string*/ ) /*:Array<Operation_t>*/
 {
-    //var window = window || {};
-    var DEBUG = window.REALTIME_DEBUG = window.REALTIME_DEBUG || {};
+    var DEBUG = Common.global.REALTIME_DEBUG = Common.global.REALTIME_DEBUG || {};
 
     var resultOps, text2, text3;
     try {

@@ -35,6 +35,8 @@ module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
 
+module.exports.global = typeof(global) === 'undefined'? self: global;
+
 module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
         (Math.floor(integer) === integer) &&
