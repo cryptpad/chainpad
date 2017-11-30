@@ -719,7 +719,7 @@ Object.freeze(module.exports);
 },
 "Common.js": function(module, exports, require){
 /*@flow*/
-/* globals localStorage */
+/* globals localStorage, window */
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -737,25 +737,33 @@ Object.freeze(module.exports);
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 "use strict";
-module.exports.DEBUG =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
-var PARANOIA = module.exports.PARANOIA =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_PARANOIA']);
+module.exports.global = (function () {
+    if (typeof(self) !== 'undefined') { return self; }
+    if (typeof(global) !== 'undefined') { return global; }
+    if (typeof(window) !== 'undefined') { return window; }
+    throw new Error("no self, nor global, nor window");
+}());
+
+var cfg = function (name) {
+    if (typeof(localStorage) !== 'undefined' && localStorage[name]) {
+        return localStorage[name];
+    }
+    // flow thinks global may be undefined
+    return module.exports.global[name];
+};
+
+var PARANOIA = module.exports.PARANOIA = cfg("ChainPad_PARANOIA");
 
 /* Good testing but slooooooooooow */
-module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG']);
+module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG = cfg("ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG");
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-module.exports.TESTING =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
+module.exports.TESTING = cfg("ChainPad_TESTING");
 
 module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
-
-module.exports.global = typeof(global) === 'undefined'? self: global;
 
 module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
@@ -1000,7 +1008,7 @@ var DEFAULT_AVERAGE_SYNC_MILLISECONDS = 300;
 var DEFAULT_STRICT_CHECKPOINT_VALIDATION = false;
 
 var debug = function (realtime, msg) {
-    if (realtime.logLevel > 0) {
+    if (realtime.logLevel > 1) {
         console.log("[" + realtime.userName + "]  " + msg);
     }
 };
@@ -1457,7 +1465,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
 
-    if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
+    debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations]));
 
     if (realtime.messages[msg.hashOf]) {
         if (realtime.setContentPatch && realtime.setContentPatch.hashOf === msg.hashOf) {
@@ -1802,7 +1810,7 @@ var mkConfig = function (config) {
         strictCheckpointValidation: config.strictCheckpointValidation ||
             DEFAULT_STRICT_CHECKPOINT_VALIDATION,
         operationSimplify: config.operationSimplify || Operation.simplify,
-        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 2,
         noPrune: config.noPrune,
         patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
@@ -1930,9 +1938,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
 
         _: undefined
     };
-    if (Common.DEBUG) {
-        out._ = realtime;
-    }
+    out._ = realtime;
     return Object.freeze(out);
 };
 
@@ -3379,11 +3385,8 @@ module.exports.sha256_asm = function sha256_asm ( stdlib, foreign, buffer ) {
 
 /*::
 import type { Operation_t } from '../Operation'
-import type { Patch_t } from '../Patch' 
 */
 var Operation = require('../Operation');
-//var Patch = require('../Patch');
-//var Sha = require('../sha256');
 var Common = require('../Common');
 
 var transformOp0 = function (
@@ -3440,16 +3443,10 @@ module.exports = function (
     for (i = opsTransformBy.length - 1; i >= 0; i--) {
         resultOfTransformBy = Operation.apply(opsTransformBy[i], resultOfTransformBy);
     }
-    var text = doc;
     var out = [];
     for (i = opsToTransform.length - 1; i >= 0; i--) {
         var tti = opsToTransform[i];
         for (var j = opsTransformBy.length - 1; j >= 0; j--) {
-            if (Common.DEBUG) {
-                console.log(
-                    ['TRANSFORM', text, tti, opsTransformBy[j]]
-                );
-            }
             try {
                 tti = transformOp(tti, opsTransformBy[j]);
             } catch (e) {

@@ -19,11 +19,8 @@
 
 /*::
 import type { Operation_t } from '../Operation'
-import type { Patch_t } from '../Patch' 
 */
 var Operation = require('../Operation');
-//var Patch = require('../Patch');
-//var Sha = require('../sha256');
 var Common = require('../Common');
 
 var transformOp0 = function (
@@ -80,16 +77,10 @@ module.exports = function (
     for (i = opsTransformBy.length - 1; i >= 0; i--) {
         resultOfTransformBy = Operation.apply(opsTransformBy[i], resultOfTransformBy);
     }
-    var text = doc;
     var out = [];
     for (i = opsToTransform.length - 1; i >= 0; i--) {
         var tti = opsToTransform[i];
         for (var j = opsTransformBy.length - 1; j >= 0; j--) {
-            if (Common.DEBUG) {
-                console.log(
-                    ['TRANSFORM', text, tti, opsTransformBy[j]]
-                );
-            }
             try {
                 tti = transformOp(tti, opsTransformBy[j]);
             } catch (e) {

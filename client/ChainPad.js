@@ -44,7 +44,7 @@ var DEFAULT_AVERAGE_SYNC_MILLISECONDS = 300;
 var DEFAULT_STRICT_CHECKPOINT_VALIDATION = false;
 
 var debug = function (realtime, msg) {
-    if (realtime.logLevel > 0) {
+    if (realtime.logLevel > 1) {
         console.log("[" + realtime.userName + "]  " + msg);
     }
 };
@@ -501,7 +501,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
 
-    if (Common.DEBUG) { debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations])); }
+    debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations]));
 
     if (realtime.messages[msg.hashOf]) {
         if (realtime.setContentPatch && realtime.setContentPatch.hashOf === msg.hashOf) {
@@ -846,7 +846,7 @@ var mkConfig = function (config) {
         strictCheckpointValidation: config.strictCheckpointValidation ||
             DEFAULT_STRICT_CHECKPOINT_VALIDATION,
         operationSimplify: config.operationSimplify || Operation.simplify,
-        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 1,
+        logLevel: (typeof(config.logLevel) === 'number') ? config.logLevel : 2,
         noPrune: config.noPrune,
         patchTransformer: config.patchTransformer || TextTransformer,
         userName: config.userName || 'anonymous',
@@ -974,9 +974,7 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
 
         _: undefined
     };
-    if (Common.DEBUG) {
-        out._ = realtime;
-    }
+    out._ = realtime;
     return Object.freeze(out);
 };
 

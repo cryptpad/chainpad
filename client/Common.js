@@ -1,5 +1,5 @@
 /*@flow*/
-/* globals localStorage */
+/* globals localStorage, window */
 /*
  * Copyright 2014 XWiki SAS
  *
@@ -17,25 +17,33 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 "use strict";
-module.exports.DEBUG =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_DEBUG']);
 
-var PARANOIA = module.exports.PARANOIA =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_PARANOIA']);
+module.exports.global = (function () {
+    if (typeof(self) !== 'undefined') { return self; }
+    if (typeof(global) !== 'undefined') { return global; }
+    if (typeof(window) !== 'undefined') { return window; }
+    throw new Error("no self, nor global, nor window");
+}());
+
+var cfg = function (name) {
+    if (typeof(localStorage) !== 'undefined' && localStorage[name]) {
+        return localStorage[name];
+    }
+    // flow thinks global may be undefined
+    return module.exports.global[name];
+};
+
+var PARANOIA = module.exports.PARANOIA = cfg("ChainPad_PARANOIA");
 
 /* Good testing but slooooooooooow */
-module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG']);
+module.exports.VALIDATE_ENTIRE_CHAIN_EACH_MSG = cfg("ChainPad_VALIDATE_ENTIRE_CHAIN_EACH_MSG");
 
 /* throw errors over non-compliant messages which would otherwise be treated as invalid */
-module.exports.TESTING =
-    (typeof(localStorage) !== 'undefined' && localStorage['ChainPad_TESTING']);
+module.exports.TESTING = cfg("ChainPad_TESTING");
 
 module.exports.assert = function (expr /*:any*/) {
     if (!expr) { throw new Error("Failed assertion"); }
 };
-
-module.exports.global = typeof(global) === 'undefined'? self: global;
 
 module.exports.isUint = function (integer /*:number*/) {
     return (typeof(integer) === 'number') &&
