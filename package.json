@@ -5,7 +5,7 @@
   "dependencies": {
     "gluejs": "~2.4.0",
     "json.sortify": "^2.2.2",
-    "nthen": "~0.1.1",
+    "nthen": "^0.1.5",
     "xmhell": "~0.1.2"
   },
   "devDependencies": {

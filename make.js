@@ -93,7 +93,7 @@ nThen(function (waitFor) {
     g.basepath('./client');
     g.main('AllTests.js');
     g.include('./');
-    g.include('../node_modules/nthen/lib/nthen.js');
+    g.include('../node_modules/nthen/index.js');
     g.remap('testNames', JSON.stringify(tests));
     g.export('AllTests');
     //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
