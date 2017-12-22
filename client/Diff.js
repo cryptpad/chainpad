@@ -28,7 +28,8 @@ var DEFAULT_BLOCKSIZE = module.exports.DEFAULT_BLOCKSIZE = 8;
 
 var hashScan = function (str, blockSize) {
     var out = {};
-    for (var i = 0; i + blockSize <= str.length; i++) {
+    var l = str.length;
+    for (var i = 0; i + blockSize <= l; i++) {
         var slice = str.slice(i, i + blockSize);
         (out[slice] = out[slice] || []).push(i);
     }
@@ -53,13 +54,10 @@ var scoreMatch = function (m) {
     return (m.length * 2) - m.oldIndex - m.newIndex;
 };
 
-/*  iterate backwards through and array, splicing out indices to remove
-    the indices to remove MUST be in ascending order
-    otherwise this could remove the wrong values
-    operates strictly via side-effects */
-var removeAscendingIndices = function (A, toRemove) {
+var removeDescendingIndices = function (A, toRemove) {
     if (!toRemove.length) { return; }
-    for (var j = toRemove.length - 1; j > -1; j--) {
+    var l = toRemove.length;
+    for (var j = 0; j < l; j++) {
         A.splice(toRemove[j], 1);
     }
 };
@@ -81,7 +79,7 @@ var listInferiorCandidates = function (current, pending) {
     var toRemove = [];
 
     var l = pending.length;
-    for (var i = 0; i < l; i++) {
+    for (var i = l - 1; i >= 0; i--) {
         if (isCompatible(current, pending[i])) { continue; }
         toRemove.push(i);
         score_rest += scoreMatch(pending[i]);
@@ -111,7 +109,7 @@ var reduceMatches = function (matches) {
     for (var i = 0; i < l_m; i++) {
         toRemove = listInferiorCandidates(matches[i], out);
         if (toRemove) {
-            removeAscendingIndices(out, toRemove);
+            removeDescendingIndices(out, toRemove);
             out.push(matches[i]);
         }
     }
