@@ -546,6 +546,45 @@ var benchmarkSync = function (callback) {
     },10);
 };
 
+/* Insert an emoji in the document, then replace it by another emoji;
+ * Check that the resulting patch is not containing a broken half-emoji
+ * by trying to "encodeURIComonent" it.
+ */
+var emojiTest = function (callback) {
+    var rt = ChainPad.create({
+        userName: 'x',
+        initialState: ''
+    });
+    rt.start();
+
+    // Check if the pacthes are encryptable
+    rt.onMessage(function (message, cb) {
+        console.log(message);
+        try {
+            encodeURIComponent(message);
+        } catch (e) {
+            console.log('Error');
+            console.log(e.message);
+            Common.assert(false);
+        }
+        setTimeout(cb);
+    });
+
+    nThen(function (waitFor) {
+        // Insert first emoji in the userdoc
+        var emoji1 = "\uD83D\uDE00";
+        rt.contentUpdate(emoji1);
+        rt.onSettle(waitFor());
+    }).nThen(function (waitFor) {
+        // Replace the emoji by a different one
+        var emoji2 = "\uD83D\uDE11";
+        rt.contentUpdate(emoji2);
+        rt.onSettle(waitFor());
+    }).nThen(function () {
+        callback();
+    });
+};
+
 module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     nThen(function (waitFor) {
         startup(waitFor());
@@ -565,5 +604,7 @@ module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
         getAuthBlock(waitFor());
     }).nThen(function (waitFor) {
         benchmarkSync(waitFor());
+    }).nThen(function (waitFor) {
+        emojiTest(waitFor());
     }).nThen(callback);
 };
