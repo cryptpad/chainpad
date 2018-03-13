@@ -31,7 +31,7 @@ var hashScan = function (str, blockSize) {
     var l = str.length;
     for (var i = 0; i + blockSize <= l; i++) {
         var slice = str.slice(i, i + blockSize);
-        (out[slice] = out[slice] || []).push(i);
+        (out[slice] = (out.hasOwnProperty(slice)? out[slice]: [])).push(i);
     }
     return out;
 };
@@ -123,7 +123,7 @@ var resolve = function (str, hash, blockSize) {
     // look for commonalities between new and old data
     for (var i = 0; i + blockSize <= str.length; i++) {
         var slice = str.slice(i, i + blockSize);
-        var instances = (hash[slice] || []).slice(0);
+        var instances = (hash.hasOwnProperty(slice)? hash[slice]: []).slice(0);
         for (var j = candidates.length - 1; j >= 0; j--) {
             var c = candidates[j];
             var ii = instances.indexOf(c.oldIndex + c.length - blockSize + 1);
