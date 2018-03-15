@@ -581,6 +581,7 @@ var emojiTest = function (callback) {
         rt.contentUpdate(emoji2);
         rt.onSettle(waitFor());
     }).nThen(function () {
+        rt.abort();
         callback();
     });
 };

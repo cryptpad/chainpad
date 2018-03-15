@@ -73,7 +73,7 @@ var fuzzCycle = function (doc, hash) {
         var op = lowEntropyRandomOp(10); //doc.length); // Operation.random(10);
         if (lastOp) {
             op = Operation.create(
-                op.offset + lastOp.offset + lastOp.toRemove + Diff.DEFAULT_BLOCKSIZE,
+                op.offset + lastOp.offset + lastOp.toRemove + 10,
                 op.toRemove,
                 op.toInsert
             );
