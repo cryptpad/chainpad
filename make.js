@@ -44,6 +44,7 @@ nThen(function (waitFor) {
     g.include('./sha256/sha256.js');
     g.include('./sha256/utils.js');
     g.include('../node_modules/json.sortify/dist/JSON.sortify.js');
+    g.include('../node_modules/fast-diff/diff.js');
 
     g.set('reset-exclude', true);
     g.set('verbose', true);
@@ -94,6 +95,7 @@ nThen(function (waitFor) {
     g.main('AllTests.js');
     g.include('./');
     g.include('../node_modules/nthen/index.js');
+    g.include('../node_modules/fast-diff/diff.js');
     g.remap('testNames', JSON.stringify(tests));
     g.export('AllTests');
     //g.set('command', 'uglifyjs --no-copyright --m "toplevel"');
