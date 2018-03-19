@@ -853,7 +853,7 @@ var mkConfig = function (config) {
         validateContent: config.validateContent || function (x) { x = x; return true; },
         diffFunction: config.diffFunction ||
             function (strA, strB /*:string*/) {
-                return Diff.diff(strA, strB, config.diffBlockSize);
+                return Diff.diff(strA, strB /*, config.diffBlockSize */);
             },
     });
 };

@@ -23,8 +23,6 @@ r.m[0] = {
  */
 "use strict";
 
-var Operation = require('./Operation');
-var Common = require('./Common');
 var FastDiff = require('fast-diff');
 
 var transform = function (matches) {
@@ -64,11 +62,9 @@ var transform = function (matches) {
 
     return out;
 };
-module.exports.diff = function (oldS, newS) {
+module.exports.diff = function (oldS /*:string*/, newS /*:string*/) {
     return transform(FastDiff(oldS, newS));
 };
-
-
 
 
 },
@@ -1609,7 +1605,7 @@ var mkConfig = function (config) {
         validateContent: config.validateContent || function (x) { x = x; return true; },
         diffFunction: config.diffFunction ||
             function (strA, strB /*:string*/) {
-                return Diff.diff(strA, strB, config.diffBlockSize);
+                return Diff.diff(strA, strB /*, config.diffBlockSize */);
             },
     });
 };

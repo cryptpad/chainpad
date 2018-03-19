@@ -17,8 +17,6 @@
  */
 "use strict";
 
-var Operation = require('./Operation');
-var Common = require('./Common');
 var FastDiff = require('fast-diff');
 
 var transform = function (matches) {
@@ -58,9 +56,7 @@ var transform = function (matches) {
 
     return out;
 };
-module.exports.diff = function (oldS, newS) {
+module.exports.diff = function (oldS /*:string*/, newS /*:string*/) {
     return transform(FastDiff(oldS, newS));
 };
-
-
 
