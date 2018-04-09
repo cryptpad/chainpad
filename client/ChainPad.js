@@ -803,6 +803,7 @@ export type ChainPad_Block_t = {
     lastMsgHash: string,
     isCheckpoint: boolean,
     getParent: ()=>?ChainPad_Block_t,
+    getChildren: ()=>Array<ChainPad_Block_t>,
     getContent: ()=>{
         error: ?string,
         doc: ?string
@@ -822,6 +823,11 @@ var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
         getParent: function () {
             var parentMsg = getParent(realtime, msg);
             if (parentMsg) { return wrapMessage(realtime, parentMsg); }
+        },
+        getChildren: function () {
+            return (realtime.messagesByParent[msg.hashOf] || []).map(function (x) {
+                return wrapMessage(realtime, x);
+            });
         },
         getContent: function () { return getContentAtState(realtime, msg); },
         getPatch: function () { return Patch.clone(msg.content); },
@@ -959,6 +965,10 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
             Common.assert(typeof(hash) === 'string');
             var msg = realtime.messages[hash];
             if (msg) { return wrapMessage(realtime, msg); }
+        },
+
+        getRootBlock: function () {
+            return wrapMessage(realtime, realtime.rootMessage);
         },
 
         getLag: function () {
