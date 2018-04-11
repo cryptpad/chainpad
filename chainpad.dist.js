@@ -896,7 +896,8 @@ export type Message_t = {
         parentCount: ?number,
         isInitialMessage: boolean,
         parent: ?Message_t,
-        isFromMe: boolean
+        isFromMe: boolean,
+        recvOrder: number,
     }
 }
 */
@@ -926,7 +927,8 @@ var create = Message.create = function (
             parentCount: undefined,
             isInitialMessage: false,
             isFromMe: false,
-            parent: undefined
+            parent: undefined,
+            recvOrder: -1,
         }
     };
     msg.hashOf = hashOf(msg);
@@ -1269,6 +1271,9 @@ var create = function (config) {
 
         lag: 0,
         timeOfLastSuccess: -1,
+
+        // Incremented every time a message comes in, valid or invalid, used to number messages.
+        recvCounter: 0,
     };
     storeMessage(realtime, zeroMsg);
     if (initMsg) {
@@ -1464,6 +1469,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
 
     if (Common.PARANOIA) { check(realtime); }
     var msg = Message.fromString(msgStr);
+    msg.mut.recvOrder = realtime.recvCounter++;
 
     debug(realtime, JSON.stringify([msg.hashOf, msg.content.operations]));
 
@@ -1766,6 +1772,7 @@ export type ChainPad_Block_t = {
     hashOf: string,
     lastMsgHash: string,
     isCheckpoint: boolean,
+    recvOrder: number,
     getParent: ()=>?ChainPad_Block_t,
     getChildren: ()=>Array<ChainPad_Block_t>,
     getContent: ()=>{
@@ -1784,6 +1791,7 @@ var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
         hashOf: msg.hashOf,
         lastMsgHash: msg.lastMsgHash,
         isCheckpoint: !!msg.content.isCheckpoint,
+        recvOrder: msg.mut.recvOrder,
         getParent: function () {
             var parentMsg = getParent(realtime, msg);
             if (parentMsg) { return wrapMessage(realtime, parentMsg); }
