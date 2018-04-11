@@ -807,6 +807,7 @@ export type ChainPad_Block_t = {
     lastMsgHash: string,
     isCheckpoint: boolean,
     recvOrder: number,
+    parentCount: number,
     getParent: ()=>?ChainPad_Block_t,
     getChildren: ()=>Array<ChainPad_Block_t>,
     getContent: ()=>{
@@ -826,6 +827,7 @@ var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
         lastMsgHash: msg.lastMsgHash,
         isCheckpoint: !!msg.content.isCheckpoint,
         recvOrder: msg.mut.recvOrder,
+        parentCount: parentCount(realtime, msg),
         getParent: function () {
             var parentMsg = getParent(realtime, msg);
             if (parentMsg) { return wrapMessage(realtime, parentMsg); }
