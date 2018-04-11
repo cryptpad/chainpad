@@ -40,7 +40,8 @@ export type Message_t = {
         parentCount: ?number,
         isInitialMessage: boolean,
         parent: ?Message_t,
-        isFromMe: boolean
+        isFromMe: boolean,
+        recvOrder: number,
     }
 }
 */
@@ -70,7 +71,8 @@ var create = Message.create = function (
             parentCount: undefined,
             isInitialMessage: false,
             isFromMe: false,
-            parent: undefined
+            parent: undefined,
+            recvOrder: -1,
         }
     };
     msg.hashOf = hashOf(msg);
