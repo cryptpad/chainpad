@@ -220,11 +220,16 @@ var storeMessage = function (realtime, msg) {
     realtime.messages[msg.hashOf] = msg;
     (realtime.messagesByParent[msg.lastMsgHash] =
         realtime.messagesByParent[msg.lastMsgHash] || []).push(msg);
+    msg.mut.status = "accepted";
 };
 
-var forgetMessage = function (realtime, msg) {
+var forgetMessage = function (realtime, msg, reason) {
     Common.assert(msg.lastMsgHash);
     Common.assert(msg.hashOf);
+    if (reason) {
+        msg.mut.status = reason;
+        realtime.rejectedBlocks.push(msg);
+    }
     delete realtime.messages[msg.hashOf];
     var list = realtime.messagesByParent[msg.lastMsgHash];
     Common.assert(list.indexOf(msg) > -1);
@@ -308,6 +313,9 @@ var create = function (config) {
 
         // Incremented every time a message comes in, valid or invalid, used to number messages.
         recvCounter: 0,
+
+        // All of the messages which were discarded because they were faulty
+        rejectedBlocks: []
     };
     storeMessage(realtime, zeroMsg);
     if (initMsg) {
@@ -512,6 +520,8 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             // We got the initial state patch, channel already has a pad, no need to send it.
             realtime.setContentPatch = null;
         } else {
+            msg.mut.status = "duplicate";
+            realtime.rejectedBlocks.push(msg);
             if (msg.content.isCheckpoint) {
                 debug(realtime, "[" +
                     (isFromMe ? "our" : "their") +
@@ -529,6 +539,8 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
     {
         // If it's not a checkpoint, we verify it later on...
         debug(realtime, "Checkpoint [" + msg.hashOf + "] failed content validation");
+        msg.mut.status = "failed_content_validation";
+        realtime.rejectedBlocks.push(msg);
         return;
     }
 
@@ -636,7 +648,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
         debug(realtime, "patch [" + msg.hashOf + "] parentHash is not valid");
         if (Common.PARANOIA) { check(realtime); }
         if (Common.TESTING) { throw new Error(); }
-        forgetMessage(realtime, msg);
+        forgetMessage(realtime, msg, "parent_hash_invalid");
         return;
     }
 
@@ -663,7 +675,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
                 debug(realtime, "checkpoint [" + msg.hashOf + "] at invalid point [" + point + "]");
                 if (Common.PARANOIA) { check(realtime); }
                 if (Common.TESTING) { throw new Error(); }
-                forgetMessage(realtime, msg);
+                forgetMessage(realtime, msg, "checkpoint_wrong_parentcount");
                 return;
             }
 
@@ -682,7 +694,7 @@ var handleMessage = function (realtime, msgStr, isFromMe) {
             debug(realtime, "patch [" + msg.hashOf + "] can be simplified");
             if (Common.PARANOIA) { check(realtime); }
             if (Common.TESTING) { throw new Error(); }
-            forgetMessage(realtime, msg);
+            forgetMessage(realtime, msg, "can_be_simplified");
             return;
         }
 
@@ -797,6 +809,7 @@ var getContentAtState = function (realtime, msg) {
 };
 
 /*::
+import type { Message_Status_t } from './Message.js';
 export type ChainPad_BlockContent_t = {
     error: ?string,
     doc: ?string
@@ -806,6 +819,7 @@ export type ChainPad_Block_t = {
     hashOf: string,
     lastMsgHash: string,
     isCheckpoint: boolean,
+    status: Message_Status_t,
     recvOrder: number,
     parentCount: number,
     getParent: ()=>?ChainPad_Block_t,
@@ -821,13 +835,16 @@ export type ChainPad_Block_t = {
 */
 
 var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
+    var pc = -1;
+    try { pc = parentCount(realtime, msg); } catch (e) { }
     return Object.freeze({
         type: 'Block',
         hashOf: msg.hashOf,
         lastMsgHash: msg.lastMsgHash,
         isCheckpoint: !!msg.content.isCheckpoint,
+        status: msg.mut.status,
         recvOrder: msg.mut.recvOrder,
-        parentCount: parentCount(realtime, msg),
+        parentCount: pc,
         getParent: function () {
             var parentMsg = getParent(realtime, msg);
             if (parentMsg) { return wrapMessage(realtime, parentMsg); }
@@ -936,6 +953,8 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
             handleMessage(realtime, message, false);
         },
 
+        /// Control functions
+
         start: function () {
             realtime.aborted = false;
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
@@ -975,8 +994,17 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
             if (msg) { return wrapMessage(realtime, msg); }
         },
 
+        getBlockHashes: function () {
+            return Object.keys(realtime.messages);
+        },
+
         getRootBlock: function () {
             return wrapMessage(realtime, realtime.rootMessage);
+        },
+
+        getRejectedBlock: function (number /*:number*/) {
+            var msg = realtime.rejectedBlocks[number];
+            return msg ? wrapMessage(realtime, msg) : undefined;
         },
 
         getLag: function () {

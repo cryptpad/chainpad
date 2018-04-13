@@ -30,6 +30,9 @@ var CHECKPOINT   = Message.CHECKPOINT   = 4;
 import type { Sha256_t } from './sha256'
 import type { Patch_t } from './Patch'
 export type Message_Type_t = 2 | 4;
+export type Message_Status_t =
+    'accepted'|'initial_state'|'duplicate'|'failed_content_validation'|
+    'can_be_simplified'|'checkpoint_wrong_parentcount'|'parent_hash_invalid'|'unhandled';
 export type Message_t = {
     type: 'Message',
     messageType: Message_Type_t,
@@ -42,6 +45,7 @@ export type Message_t = {
         parent: ?Message_t,
         isFromMe: boolean,
         recvOrder: number,
+        status: Message_Status_t
     }
 }
 */
@@ -73,6 +77,7 @@ var create = Message.create = function (
             isFromMe: false,
             parent: undefined,
             recvOrder: -1,
+            status: "unhandled"
         }
     };
     msg.hashOf = hashOf(msg);

@@ -160,8 +160,27 @@ A block object is an internal representation of a message sent on the wire, each
 **Block** is the initial block.
 * **isCheckpoint**: True if this **Block** represents a *checkpoint*. A *checkpoint* always removes
 all of the content from the document and then adds it back, leaving the document as it was.
+* **status**: The status of the block when it was accessed, one of:
+  * *unhandled*: The block has not yet been handled by handleMessage
+  * *accepted*: The block was accepted into storage
+  * *initial_state*: The block was accepted as the initial state of the document, this applies to
+    the initial state patch as well as to checkpoints which serve as initial state
+  * *duplicate*: The block was rejected as a duplicate
+  * *failed_content_validation*: The block was rejected because it failed content validation
+  * *can_be_simplified*: The block was rejected because it's patch contains redundant operations
+  * *checkpoint_wrong_parentcount*: The block was rejected because it is a checkpoint, the
+    parentCount is not a multiple of checkpointInterval and strictCheckpointValidation is enabled
+  * *parent_hash_invalid*: The sha256 which the patch declares is the state of the document when
+    the patch is to be applied differs from the sha256 of the document as computed by ChainPad.
+    This implies a failure of consensus between the instances of ChainPad which edit the document.
+* **recvOrder**: The number of the block in the order it was received from the server, starting
+with 0.
+* **parentCount**: The number of blocks which are between this block and the root block (initial
+state of the document), if the block is unconnected (waiting for an ancestor to fill in the gap
+between it and the document root) then this number will be -1.
 * **getParent**`() -> Block`: Get the parent block of this block, this is fast because the blocks
 are already in the chain in memory.
+* **getChildren**`() -> Array<Block>`: An array of all blocks which point to this one as parent.
 * **getContent**`() -> string`: Get the content of the *Authoritative Document* at the point in the
 history represented by this block. This takes time because it requires replaying part of the chain.
 * **getPatch**`() -> Patch`: Get a clone of the **Patch** which is contained in this block.
@@ -191,15 +210,6 @@ committed, just that it has attempted to send it to the server.
 
 Access the *Authoritative Document*, this is the content which everybody has agreed upon and has
 been entered into the chain.
-
-### chainpad.getAuthBlock()
-
-Access the blockchain block which is at the head of the chain, this block contains the last patch
-which made the *Authoritative Document* what it is. This returns a *Block Object*.
-
-### chainpad.getBlockForHash()
-
-Access the stored block which based on the SHA-256 hash.
 
 ### chainpad.getUserDoc()
 
@@ -244,6 +254,32 @@ Register a handler to be called *once* when there is no *Uncommitted Work* left.
 prove that no patch will be reverted because of a chain fork, but it does verify that the message
 has hit the server and been acknowledged. The handler will be called only once the next time the
 state is settled but you can re-register inside of the handler.
+
+### chainpad.getAuthBlock()
+
+Access the blockchain block which is at the head of the chain, this block contains the last patch
+which made the *Authoritative Document* what it is. This returns a *Block Object*.
+
+### chainpad.getBlockForHash()
+
+Access the stored block which based on the SHA-256 hash.
+
+### chainpad.getBlockHashes()
+
+Get a list of all block hashes, including for valid blocks which are not connected to the chain,
+they can then be accessed using getBlockForHash()
+
+### chainpad.getRootBlock()
+
+Get the initial block for the chain which is the parent of all other blocks. This might be either
+the synthetic initial state block or it might be a checkpoint which is send if the server sends
+a truncated history.
+
+### chainpad.getRejectedBlock(number)
+
+Get a block which was rejected by ChainPad, these are added to an array in the order that they
+are rejected and can be used for debugging purposes. If `number` is past the end of the array
+this will simply return undefined.
 
 ### chainpad.getLag()
 
