@@ -22,7 +22,7 @@ To compile the code into `chainpad.js` run the following:
     npm install
     node make
 
-This will run the tests and concatinate the js files into the resulting `chainpad.js` output file.
+This will run the tests and concatenate the js files into the resulting `chainpad.js` output file.
 
 ## The API
 
@@ -50,7 +50,7 @@ will result in more patches to download for a new person joining the pad.
 * **avgSyncMilliseconds** (number) the number of milliseconds to wait before sending to the server
 if there is anything to be sent. Making this number smaller will cause lots of patches to be sent
 (however the number will be limited by the RTT to the server because ChainPad will only keep one
-unacknoledged message on the wire at a time).
+unacknowledged message on the wire at a time).
 * **validateContent** (function) if specified, this function will be called during each patch and
 receive the content of the document after the patch, if the document has semantic requirements
 then this function can validate them if they are broken then the patch will be rejected.
@@ -249,8 +249,8 @@ state is settled but you can re-register inside of the handler.
 
 Tells the amount of lag between the last onMessage events being fired by chainpad and the callback.
 Specifically this returns an object with lag and pending properties. Pending is true if a message
-has been sent which has not yet been acknoledged. Lag is the amount of time between the previous
-sent message and it's response or if the previously send message has not yet been acknoledged, it
+has been sent which has not yet been acknowledged. Lag is the amount of time between the previous
+sent message and it's response or if the previously send message has not yet been acknowledged, it
 is the amount of time since it was sent.
 
 # Internals
@@ -295,7 +295,7 @@ other user's work so **transform's** decision making cannot possibly lead to de-
 Internally the client stores a document known as the *Authoritative Document* this is the last known
 state of the document which is agreed upon by all of the clients and the *Authoritative Document*
 can only be changed as a result of an incoming **Patch** from the server. The difference between
-what the user sees in their screen and the *Authoriative Document* is represented by a **Patch**
+what the user sees in their screen and the *Authoritative Document* is represented by a **Patch**
 known as the *Uncommitted Work*.
 
 When the user types in the document, onInsert() and onRemove() are called, creating **Operations**
@@ -336,7 +336,7 @@ and all patches newer than that.
 
 ## Relationship to Bitcoin
 
-Those with knowlege of Bitcoin will recognize this consensus protocol as inherently a
+Those with knowledge of Bitcoin will recognize this consensus protocol as inherently a
 Nakamoto Chain. Whereas Bitcoin uses blocks, each of which point to the previous block, ChainPad
 uses **Patches** each of which point to the previous state of the document. In the case of ChainPad
 there is of course no mining or difficulty as security is not intended by this protocol. Obviously
