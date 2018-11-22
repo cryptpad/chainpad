@@ -3453,8 +3453,9 @@ var resolve = function (A /*:any*/, B /*:any*/, arbiter /*:?function*/) {
 
             /*  remove operations which would no longer make sense
                 for instance, if a replaces an array with a string,
-                that would invalidate a splice operation at that path */
-            if (b.type === 'splice' && A.some(function (a) {
+                that would invalidate a splice or replace operation in that array */
+            if (['splice', 'replace'].indexOf(b.type) !== -1 && A.some(function (a) {
+                // A can be a splice if it's updating something in an array
                 if (a.type === 'splice' && pathOverlaps(a.path, b.path)) {
                     if (a.path.length - b.path.length < 0) {
                         if (!a.removals) { return; }
@@ -3481,6 +3482,13 @@ var resolve = function (A /*:any*/, B /*:any*/, arbiter /*:?function*/) {
                                 return true;
                             }
                         }
+                    }
+                }
+                // Or A can be a replace
+                if (['replace', 'remove'].indexOf(a.type) !== -1 && pathOverlaps(a.path, b.path)) {
+                    if (a.path.length - b.path.length < 0) {
+                        // b is a descendant of an element whose type has changed
+                        return true;
                     }
                 }
             })) { return false; }
@@ -3817,7 +3825,7 @@ module.exports._ = {
     diff: diff,
     resolve: resolve,
     patch: patch,
-
+    arbiter: arbiter
 };
 
 },

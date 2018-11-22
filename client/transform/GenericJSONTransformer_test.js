@@ -635,7 +635,7 @@ assert(function (expected, jsonTransformer) {
 }, "failed ot with 2 operations in the same text node",
 '["BODY",{},["P",{},["pewpewpew pezpez"]]]');
 
-basicTest({
+/*basicTest({
     doc: '["BODY",{},["P",{},["pewpew pezpew end"]]]',
     s_toTransform: '["BODY",{},["P",{},["pewpewpew pezpew end"]]]',
     s_transformBy: '["BODY",{},["P",{},["pewpe pezpez"," end"]]]',
@@ -644,11 +644,11 @@ basicTest({
     skipIfNaive: true,
     comment: [
         'TODO This test is passing but only to document the behavior of JSON-OT',
-        'Yanns expected output of this test is: ["BODY",{},["P",{},["pewpewpew pezpez"," end"]]]',
+        'Yanns expected output of this test is: ["BODY",{},["P",{},["pewpewpe pezpez"," end"]]]',
         'NaiveJSONTransformer results in:       ["BODY",{},["P",{},["pewpe pezpez","pew end"]]]',
         'The output is:                         ["BODY",{},["P",{},["pewpe pezpez","pewpewpew pezpew end"]]]'
     ].join('\n')
-});
+});*/
 
 basicTest({
     doc: '["a"]', s_toTransform: '["b"]', s_transformBy: '["c"]', expected: '["bc"]',

@@ -235,6 +235,174 @@ assert(function (expected) {
     return true;
 }, "diff/patching strings with overlaps", ["powpow bang"]);
 
+assert(function () {
+    var s_orig = '{"bang":["pew"]}';
+    var opsTransformBy = [{"type":"Operation","offset":8,"toRemove":7,"toInsert":"\"str\""}];
+    // ==> {"bang":"str"}
+    var opsToTransform = [{"type":"Operation","offset":12,"toRemove":1,"toInsert":"z"}];
+    // ==> {"bang":["pez"]}
+
+    var o_orig = JSON.parse(s_orig);
+
+    var s_transformBy = Operation.applyMulti(opsTransformBy, s_orig);
+    var o_transformBy = JSON.parse(s_transformBy);
+
+    var s_toTransform = Operation.applyMulti(opsToTransform, s_orig);
+    var o_toTransform = JSON.parse(s_toTransform);
+
+    try {
+        var diffTTF = OT.diff(o_orig, o_toTransform);
+        var diffTFB = OT.diff(o_orig, o_transformBy);
+        var newDiffTTF = OT.resolve(OT.clone(diffTFB), OT.clone(diffTTF), OT.arbiter);
+
+        OT.patch(o_orig, diffTFB);
+        OT.patch(o_orig, newDiffTTF);
+
+        if (!OT.deepEqual(o_orig, o_transformBy)) {
+            return newDiffTTF;
+        }
+
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}, 'WIP investigating an edge case in OT');
+
+assert(function () {
+    var s_orig = '{"bang":[[], "pew"]}';
+    var opsTransformBy = [{"type":"Operation","offset":8,"toRemove":11,"toInsert":"\"s\""}];
+    // ==> {"bang":"s"}
+    var opsToTransform = [{"type":"Operation","offset":10,"toRemove":0,"toInsert":"\"z\""}];
+    // ==> {"bang":[["z"], "pew"]}
+
+    var o_orig = JSON.parse(s_orig);
+
+    var s_transformBy = Operation.applyMulti(opsTransformBy, s_orig);
+    var o_transformBy = JSON.parse(s_transformBy);
+
+    var s_toTransform = Operation.applyMulti(opsToTransform, s_orig);
+    var o_toTransform = JSON.parse(s_toTransform);
+
+    try {
+        var diffTTF = OT.diff(o_orig, o_toTransform);
+        var diffTFB = OT.diff(o_orig, o_transformBy);
+        var newDiffTTF = OT.resolve(OT.clone(diffTFB), OT.clone(diffTTF), OT.arbiter);
+
+        OT.patch(o_orig, diffTFB);
+        OT.patch(o_orig, newDiffTTF);
+
+        if (!OT.deepEqual(o_orig, o_transformBy)) {
+            return newDiffTTF;
+        }
+
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}, 'WIP2 investigating an edge case in OT');
+
+assert(function () {
+    var s_orig = '{"bang":[["k"], "pew"]}';
+    var opsTransformBy = [{"type":"Operation","offset":9,"toRemove":5,"toInsert":"\"s\""}];
+    // ==> {"bang":["s","pew"]}
+    var opsToTransform = [{"type":"Operation","offset":11,"toRemove":1,"toInsert":"z"}];
+    // ==> {"bang":[["z"], "pew"]}
+
+    var o_orig = JSON.parse(s_orig);
+
+    var s_transformBy = Operation.applyMulti(opsTransformBy, s_orig);
+    var o_transformBy = JSON.parse(s_transformBy);
+
+    var s_toTransform = Operation.applyMulti(opsToTransform, s_orig);
+    var o_toTransform = JSON.parse(s_toTransform);
+
+    try {
+        var diffTTF = OT.diff(o_orig, o_toTransform);
+        var diffTFB = OT.diff(o_orig, o_transformBy);
+        var newDiffTTF = OT.resolve(OT.clone(diffTFB), OT.clone(diffTTF), OT.arbiter);
+
+        OT.patch(o_orig, diffTFB);
+        OT.patch(o_orig, newDiffTTF);
+
+        if (!OT.deepEqual(o_orig, o_transformBy)) {
+            return newDiffTTF;
+        }
+
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}, 'WIP3 investigating an edge case in OT');
+
+assert(function () {
+    var s_orig = '{"bang":["k", "pew"]}';
+    var opsTransformBy = [{"type":"Operation","offset":9,"toRemove":3,"toInsert":"[]"}];
+    // ==> {"bang":[[],"pew"]}
+    var opsToTransform = [{"type":"Operation","offset":10,"toRemove":1,"toInsert":"z"}];
+    // ==> {"bang":["z", "pew"]}
+
+    var o_orig = JSON.parse(s_orig);
+
+    var s_transformBy = Operation.applyMulti(opsTransformBy, s_orig);
+    var o_transformBy = JSON.parse(s_transformBy);
+
+    var s_toTransform = Operation.applyMulti(opsToTransform, s_orig);
+    var o_toTransform = JSON.parse(s_toTransform);
+
+    try {
+        var diffTTF = OT.diff(o_orig, o_toTransform);
+        var diffTFB = OT.diff(o_orig, o_transformBy);
+        var newDiffTTF = OT.resolve(OT.clone(diffTFB), OT.clone(diffTTF), OT.arbiter);
+
+        OT.patch(o_orig, diffTFB);
+        OT.patch(o_orig, newDiffTTF);
+
+        if (!OT.deepEqual(o_orig, o_transformBy)) {
+            return newDiffTTF;
+        }
+
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}, 'WIP4 investigating an edge case in OT');
+
+assert(function () {
+    var s_orig = '{"bang":["k", "pew"]}';
+    // transformBy: {}
+    var opsToTransform = [{"type":"Operation","offset":10,"toRemove":1,"toInsert":"z"}];
+    // ==> {"bang":["z", "pew"]}
+
+    var o_orig = JSON.parse(s_orig);
+
+    var o_transformBy = {};
+
+    var s_toTransform = Operation.applyMulti(opsToTransform, s_orig);
+    var o_toTransform = JSON.parse(s_toTransform);
+
+    try {
+        var diffTTF = OT.diff(o_orig, o_toTransform);
+        var diffTFB = OT.diff(o_orig, o_transformBy);
+        var newDiffTTF = OT.resolve(OT.clone(diffTFB), OT.clone(diffTTF), OT.arbiter);
+
+        OT.patch(o_orig, diffTFB);
+        OT.patch(o_orig, newDiffTTF);
+
+        if (!OT.deepEqual(o_orig, o_transformBy)) {
+            return newDiffTTF;
+        }
+
+        return true;
+    } catch (e) {
+        console.error(e);
+        return false;
+    }
+}, 'WIP5 investigating an edge case in OT');
+
 // TODO
 assert(function () {
     var O = {
