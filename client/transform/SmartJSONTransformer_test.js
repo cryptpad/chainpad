@@ -406,6 +406,36 @@ assert(function () {
     return true;
 }, 'overlapping splices did not preserve intent #4');
 
+assert(function () {
+    var O = { Y: '12345'.split("")};
+    var A = { Y: '125'.split("")}; // remove two of the middle elements
+    var B = { Y: '145'.split("")}; // remove elements earlier in the array with some overlap
+
+    var d_A = OT.diff(O, A);
+    var d_B = OT.diff(O, B);
+
+    var changes = OT.resolve(d_A, d_B);
+
+    var C =  OT.clone(O);
+
+    OT.patch(C, d_A);
+    OT.patch(C, changes);
+
+    var expected = {
+        Y: '15'.split(""), // the contained removal should have been cancelled out
+    };
+
+    if (!OT.deepEqual(C, expected)) {
+        console.log('diff of A', d_A);
+        console.log('diff of B', d_B);
+        return C;
+    }
+
+    return true;
+}, 'overlapping splices did not preserve intent #5');
+
+
+
 module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     runASSERTS(SmartJSONTransformer);
     if (failed) {
