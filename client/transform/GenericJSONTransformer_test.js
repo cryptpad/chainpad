@@ -694,9 +694,11 @@ basicTest({
 });
 
 basicTest({
-    doc: '["a"]', s_toTransform: '[]', s_transformBy: '["a","c"]', expected: '["a"]',
+    doc: '["a"]', s_toTransform: '[]', s_transformBy: '["a","c"]', expected: '["c"]',
     name: "multiple intersecting array splices (remove push)",
-    comment: 'TODO: Caleb: This should result in ["c"]',
+    // expected value was set to an incorrect value, but we now produce the correct value
+    // this test has since been un-stubbed
+    comment: 'Caleb: This should result in ["c"]',
     skipIfNaive: true
 });
 
