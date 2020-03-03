@@ -265,6 +265,147 @@ assert(function () {
     return true;
 }, "Expected original objects to be unaffected. all operations must be pure");
 
+assert(function () {
+    var O = { Y: ['pewpew', 'bangbang'], Z: 7, };
+    var A = { Y: ['bangbang'], Z: 7, };
+    var B = { Y: [ 'bangbang'], Z: 7, };
+
+    var d_A = OT.diff(O, A);
+    var d_B = OT.diff(O, B);
+
+    var changes = OT.resolve(d_A, d_B);
+
+    var C =  OT.clone(O);
+
+    OT.patch(C, d_A);
+    OT.patch(C, changes);
+
+    var expected = {
+        Y: ['bangbang'],
+        Z: 7,
+    };
+
+    if (!OT.deepEqual(C, expected)) {
+        console.log('diff of A', d_A);
+        console.log('diff of B', d_B);
+        return C;
+    }
+
+    return true;
+}, 'the second of two identical array splices should be ignored');
+
+assert(function () {
+    var O = { Y: ['pewpew', 'bangbang', 'boom']};
+    var A = { Y: ['boom']};
+    var B = { Y: ['pewpew', 'boom']};
+
+    var d_A = OT.diff(O, A);
+    var d_B = OT.diff(O, B);
+
+    var changes = OT.resolve(d_A, d_B);
+
+    var C =  OT.clone(O);
+
+    OT.patch(C, d_A);
+    OT.patch(C, changes);
+
+    var expected = {
+        Y: ['boom'],
+    };
+
+    if (!OT.deepEqual(C, expected)) {
+        console.log('diff of A', d_A);
+        console.log('diff of B', d_B);
+        return C;
+    }
+
+    return true;
+}, 'overlapping splices did not preserve intent #1');
+
+assert(function () {
+    var O = { Y: ['pewpew', 'bangbang', 'boom', 'blam']};
+    var A = { Y: ['boom', 'blam']}; // remove the first two elements of an array
+    var B = { Y: ['pewpew', 'boom', 'blam']}; // remove the second element of an array
+
+    var d_A = OT.diff(O, A);
+    var d_B = OT.diff(O, B);
+
+    var changes = OT.resolve(d_A, d_B);
+
+    var C =  OT.clone(O);
+
+    OT.patch(C, d_A);
+    OT.patch(C, changes);
+
+    var expected = {
+        Y: ['boom', 'blam'],
+    };
+
+    if (!OT.deepEqual(C, expected)) {
+        console.log('diff of A', d_A);
+        console.log('diff of B', d_B);
+        return C;
+    }
+
+    return true;
+}, 'overlapping splices did not preserve intent #2');
+
+assert(function () {
+    var O = { Y: '12345'.split("")};
+    var A = { Y: '15'.split("")};
+    var B = { Y: '1245'.split("")};
+
+    var d_A = OT.diff(O, A);
+    var d_B = OT.diff(O, B);
+
+    var changes = OT.resolve(d_A, d_B);
+
+    var C =  OT.clone(O);
+
+    OT.patch(C, d_A);
+    OT.patch(C, changes);
+
+    var expected = {
+        Y: '15'.split(""),
+    };
+
+    if (!OT.deepEqual(C, expected)) {
+        console.log('diff of A', d_A);
+        console.log('diff of B', d_B);
+        return C;
+    }
+
+    return true;
+}, 'overlapping splices did not preserve intent #3');
+
+assert(function () {
+    var O = { Y: '12345'.split("")};
+    var A = { Y: '15'.split("")}; // remove the middle three elements
+    var B = { Y: '1245'.split("")}; // remove one element from the middle
+
+    var d_A = OT.diff(O, A);
+    var d_B = OT.diff(O, B);
+
+    var changes = OT.resolve(d_A, d_B);
+
+    var C =  OT.clone(O);
+
+    OT.patch(C, d_A);
+    OT.patch(C, changes);
+
+    var expected = {
+        Y: '15'.split(""), // the contained removal should have been cancelled out
+    };
+
+    if (!OT.deepEqual(C, expected)) {
+        console.log('diff of A', d_A);
+        console.log('diff of B', d_B);
+        return C;
+    }
+
+    return true;
+}, 'overlapping splices did not preserve intent #4');
+
 module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
     runASSERTS(SmartJSONTransformer);
     if (failed) {
