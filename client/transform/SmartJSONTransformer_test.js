@@ -436,6 +436,7 @@ assert(function () {
 
 assert(function () {
     return true; // TODO unstub this, make it work
+/*
     var O = { Y: '12345'.split("")};
     var A = { Y: '125'.split("")}; // remove 3, 4
     var B = { Y: '013456'.split("")}; // remove 2, insert 0, 6
@@ -461,6 +462,7 @@ assert(function () {
     }
 
     return true;
+*/
 }, 'overlapping splices did not preserve intent #6');
 
 module.exports.main = function (cycles /*:number*/, callback /*:()=>void*/) {
