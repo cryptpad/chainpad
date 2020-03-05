@@ -278,10 +278,10 @@ var resolve = function (A /*:any*/, B /*:any*/, arbiter /*:?function*/) {
                                 return;
                             }
 
-                            // otherwise 
-
+                            // otherwise, a and b have the same offset
+                            // substract a's removals from your own
                             b.removals = Math.max(b.removals - (b.offset + a.removals - b.offset), 0);
-
+                            // and adjust your offset by the change in length introduced by a
                             b.offset += (a.value.length - a.removals);
                         } else {
                             // adjust the path of b to account for the splice
@@ -289,7 +289,6 @@ var resolve = function (A /*:any*/, B /*:any*/, arbiter /*:?function*/) {
                         }
                         return;
                     }
-
 
                     if (pathOverlaps(a.path, b.path)) {
                         // TODO validate that this isn't an off-by-one error
