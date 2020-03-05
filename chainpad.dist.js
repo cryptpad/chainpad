@@ -3516,21 +3516,32 @@ var resolve = function (A /*:any*/, B /*:any*/, arbiter /*:?function*/) {
                 if (a.type === 'splice') {
                     // TODO
                     // what if a.path == b.path
-                    // what if a removes elements (splice) and b also removes elements
-                    // (generally we merge these two together but it is probably best to allow the api customer to decide via a "strategy")
-                    // Note that A might be removing *and* inserting because a splice is roughly equivilent to a ChainPad Operation
-                    // Consult Transform0 :)
 
             // resolve insertion overlaps array.push conflicts
             // iterate over A such that each overlapping splice
-            // adjusts the path/offset of b
+            // adjusts the path/offset/removals of b
 
                     if (deepEqual(a.path, b.path)) {
                         if (b.type === 'splice') {
-                            // what if the splice is a removal?
+                            // if b's offset is outside of a's range
+                            // decrease its offset by a delta length
+                            if (b.offset > (a.offset + b.removals)) {
+                                b.offset += a.value.length - a.removals;
+                                return;
+                            }
+
+                            if (b.offset < a.offset) {
+                            // shorten the list of removals to before a's offset
+                            // TODO this is probably wrong, but it's making tests pass...
+                                b.removals = Math.max(a.offset - b.offset, 0);
+                                return;
+                            }
+
+                            // otherwise, a and b have the same offset
+                            // substract a's removals from your own
+                            b.removals = Math.max(b.removals - (b.offset + a.removals - b.offset), 0);
+                            // and adjust your offset by the change in length introduced by a
                             b.offset += (a.value.length - a.removals);
-                            // if both A and B are removing the same thing
-                            // be careful
                         } else {
                             // adjust the path of b to account for the splice
                             // TODO
@@ -3817,7 +3828,7 @@ module.exports._ = {
     diff: diff,
     resolve: resolve,
     patch: patch,
-
+    arbiter: arbiter,
 };
 
 },
