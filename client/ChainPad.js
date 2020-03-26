@@ -114,6 +114,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
         }
     });
 
+    /*
     var timeout = schedule(realtime, function () {
         debug(realtime, "Failed to send message [" + msg.hashOf + "] to server");
         var pending = realtime.pending;
@@ -127,6 +128,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
             throw new Error("INTERNAL ERROR: Message timed out but no realtime.pending");
         }
     }, 10000 + (Math.random() * 5000));
+    */
 
     if (realtime.pending) { throw new Error("there is already a pending message"); }
     if (realtime.timeOfLastSuccess === -1) { realtime.timeOfLastSuccess = +new Date(); }
@@ -134,7 +136,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
         hash: msg.hashOf,
         timeSent: timeSent || +new Date(),
         callback: function () {
-            unschedule(realtime, timeout);
+            //unschedule(realtime, timeout);
             realtime.syncSchedule = schedule(realtime, function () { sync(realtime); }, 0);
             callback();
         }
