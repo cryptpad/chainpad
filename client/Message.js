@@ -75,7 +75,7 @@ var create = Message.create = function (
     };
     msg.hashOf = hashOf(msg);
     if (Common.PARANOIA) { check(msg); }
-    return Object.freeze(msg);
+    return msg;
 };
 
 // $FlowFixMe doesn't like the toString()
@@ -90,9 +90,16 @@ var toString = Message.toStr = Message.toString = function (msg /*:Message_t*/) 
 };
 
 Message.fromString = function (str /*:string*/) /*:Message_t*/ {
+    var obj = {};
+    if (typeof(str) === "object") {
+        obj = str;
+        str = str.msg;
+    }
     var m = JSON.parse(str);
     if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
     var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
+    msg.author = obj.author;
+    msg.time = obj.time && new Date(obj.time);
     return Object.freeze(msg);
 };
 
