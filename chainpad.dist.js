@@ -719,7 +719,7 @@ var create = Message.create = function (
     };
     msg.hashOf = hashOf(msg);
     if (Common.PARANOIA) { check(msg); }
-    return msg;
+    return Object.freeze(msg);
 };
 
 // $FlowFixMe doesn't like the toString()
@@ -742,8 +742,8 @@ Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var m = JSON.parse(str);
     if (m[0] !== CHECKPOINT && m[0] !== PATCH) { throw new Error("invalid message type " + m[0]); }
     var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
-    msg.author = obj.author;
-    msg.time = obj.time && new Date(obj.time);
+    msg.mut.author = obj.author;
+    msg.mut.time = obj.time && new Date(obj.time);
     return Object.freeze(msg);
 };
 
@@ -1581,8 +1581,8 @@ var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
         lastMsgHash: msg.lastMsgHash,
         isCheckpoint: !!msg.content.isCheckpoint,
         isFromMe: msg.mut && msg.mut.isFromMe,
-        author: msg.author,
-        time: msg.time,
+        author: msg.mut && msg.mut.author,
+        time: msg.mut && msg.mut.time,
         getParent: function () {
             var parentMsg = getParent(realtime, msg);
             if (parentMsg) { return wrapMessage(realtime, parentMsg); }
