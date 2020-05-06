@@ -96,7 +96,8 @@ var invert = Operation.invert = function (op /*:Operation_t*/, doc /*:string*/) 
     return create(
         op.offset,
         op.toInsert.length,
-        doc.substring(op.offset, op.offset + op.toRemove)
+        // https://stackoverflow.com/a/31733628
+        (' ' + doc.substring(op.offset, op.offset + op.toRemove)).slice(1)
     );
 };
 
