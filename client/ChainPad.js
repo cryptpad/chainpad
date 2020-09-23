@@ -823,6 +823,7 @@ var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
         isCheckpoint: !!msg.content.isCheckpoint,
         isFromMe: msg.mut && msg.mut.isFromMe,
         author: msg.mut && msg.mut.author,
+        serverHash: msg.mut && msg.mut.serverHash,
         time: msg.mut && msg.mut.time,
         getParent: function () {
             var parentMsg = getParent(realtime, msg);

@@ -44,6 +44,7 @@ export type Message_t = {
         isFromMe: ?boolean,
         time: ?number,
         author: ?string,
+        serverHash: ?string,
     }
 }
 */
@@ -76,6 +77,7 @@ var create = Message.create = function (
             parent: undefined,
             time: undefined,
             author: undefined,
+            serverHash: undefined,
         }
     };
     msg.hashOf = hashOf(msg);
@@ -105,6 +107,7 @@ Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
     msg.mut.author = obj.author;
     msg.mut.time = obj.time && new Date(obj.time);
+    msg.mut.serverHash = obj.serverHash;
     return Object.freeze(msg);
 };
 

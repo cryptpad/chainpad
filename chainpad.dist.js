@@ -688,6 +688,7 @@ export type Message_t = {
         isFromMe: ?boolean,
         time: ?number,
         author: ?string,
+        serverHash: ?string,
     }
 }
 */
@@ -720,6 +721,7 @@ var create = Message.create = function (
             parent: undefined,
             time: undefined,
             author: undefined,
+            serverHash: undefined,
         }
     };
     msg.hashOf = hashOf(msg);
@@ -749,6 +751,7 @@ Message.fromString = function (str /*:string*/) /*:Message_t*/ {
     var msg = create(m[0], Patch.fromObj(m[1], (m[0] === CHECKPOINT)), m[2]);
     msg.mut.author = obj.author;
     msg.mut.time = obj.time && new Date(obj.time);
+    msg.mut.serverHash = obj.serverHash;
     return Object.freeze(msg);
 };
 
@@ -1587,6 +1590,7 @@ var wrapMessage = function (realtime, msg) /*:ChainPad_Block_t*/ {
         isCheckpoint: !!msg.content.isCheckpoint,
         isFromMe: msg.mut && msg.mut.isFromMe,
         author: msg.mut && msg.mut.author,
+        serverHash: msg.mut && msg.mut.serverHash,
         time: msg.mut && msg.mut.time,
         getParent: function () {
             var parentMsg = getParent(realtime, msg);
@@ -3274,6 +3278,95 @@ module.exports = function (
 };
 
 },
+"transform/NaiveJSONTransformer.js": function(module, exports, require){
+/*@flow*/
+/*
+ * Copyright 2014 XWiki SAS
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
+"use strict";
+
+var TextTransformer = require('./TextTransformer');
+//var ChainPad = require('../ChainPad');
+var Operation = require('../Operation');
+var Common = require('../Common');
+
+/*::
+import type { Operation_t } from '../Operation';
+*/
+
+module.exports = function (
+    opsToTransform /*:Array<Operation_t>*/,
+    opsTransformBy /*:Array<Operation_t>*/,
+    text /*:string*/ ) /*:Array<Operation_t>*/
+{
+    var DEBUG = Common.global.REALTIME_DEBUG = Common.global.REALTIME_DEBUG || {};
+
+    var resultOps, text2, text3;
+    try {
+        // text = O (mutual common ancestor)
+        // toTransform = A (your own operation)
+        // transformBy = B (the incoming operation)
+        // threeway merge (0, A, B)
+
+        resultOps = TextTransformer(opsToTransform, opsTransformBy, text);
+
+        text2 = Operation.applyMulti(opsTransformBy, text);
+
+        text3 = Operation.applyMulti(resultOps, text2);
+        try {
+            JSON.parse(text3);
+            return resultOps;
+        } catch (e) {
+            console.error(e);
+            DEBUG.ot_parseError = {
+                type: 'resultParseError',
+                resultOps: resultOps,
+
+                toTransform: opsToTransform,
+                transformBy: opsTransformBy,
+
+                text1: text,
+                text2: text2,
+                text3: text3,
+                error: e
+            };
+            console.log('Debugging info available at `window.REALTIME_DEBUG.ot_parseError`');
+        }
+    } catch (x) {
+        console.error(x);
+        DEBUG.ot_applyError = {
+            type: 'resultParseError',
+            resultOps: resultOps,
+
+            toTransform: opsToTransform,
+            transformBy: opsTransformBy,
+
+            text1: text,
+            text2: text2,
+            text3: text3,
+            error: x
+        };
+        console.log('Debugging info available at `window.REALTIME_DEBUG.ot_applyError`');
+    }
+
+    // return an empty patch in case we can't do anything else
+    return [];
+};
+
+},
 "transform/SmartJSONTransformer.js": function(module, exports, require){
 
 /*@flow*/
@@ -3847,95 +3940,6 @@ module.exports._ = {
     resolve: resolve,
     patch: patch,
     arbiter: arbiter,
-};
-
-},
-"transform/NaiveJSONTransformer.js": function(module, exports, require){
-/*@flow*/
-/*
- * Copyright 2014 XWiki SAS
- *
- * This program is free software: you can redistribute it and/or modify
- * it under the terms of the GNU Affero General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
- *
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU Affero General Public License for more details.
- *
- * You should have received a copy of the GNU Affero General Public License
- * along with this program.  If not, see <http://www.gnu.org/licenses/>.
- */
-"use strict";
-
-var TextTransformer = require('./TextTransformer');
-//var ChainPad = require('../ChainPad');
-var Operation = require('../Operation');
-var Common = require('../Common');
-
-/*::
-import type { Operation_t } from '../Operation';
-*/
-
-module.exports = function (
-    opsToTransform /*:Array<Operation_t>*/,
-    opsTransformBy /*:Array<Operation_t>*/,
-    text /*:string*/ ) /*:Array<Operation_t>*/
-{
-    var DEBUG = Common.global.REALTIME_DEBUG = Common.global.REALTIME_DEBUG || {};
-
-    var resultOps, text2, text3;
-    try {
-        // text = O (mutual common ancestor)
-        // toTransform = A (your own operation)
-        // transformBy = B (the incoming operation)
-        // threeway merge (0, A, B)
-
-        resultOps = TextTransformer(opsToTransform, opsTransformBy, text);
-
-        text2 = Operation.applyMulti(opsTransformBy, text);
-
-        text3 = Operation.applyMulti(resultOps, text2);
-        try {
-            JSON.parse(text3);
-            return resultOps;
-        } catch (e) {
-            console.error(e);
-            DEBUG.ot_parseError = {
-                type: 'resultParseError',
-                resultOps: resultOps,
-
-                toTransform: opsToTransform,
-                transformBy: opsTransformBy,
-
-                text1: text,
-                text2: text2,
-                text3: text3,
-                error: e
-            };
-            console.log('Debugging info available at `window.REALTIME_DEBUG.ot_parseError`');
-        }
-    } catch (x) {
-        console.error(x);
-        DEBUG.ot_applyError = {
-            type: 'resultParseError',
-            resultOps: resultOps,
-
-            toTransform: opsToTransform,
-            transformBy: opsTransformBy,
-
-            text1: text,
-            text2: text2,
-            text3: text3,
-            error: x
-        };
-        console.log('Debugging info available at `window.REALTIME_DEBUG.ot_applyError`');
-    }
-
-    // return an empty patch in case we can't do anything else
-    return [];
 };
 
 }
