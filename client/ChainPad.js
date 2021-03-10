@@ -99,6 +99,7 @@ var sendMessage = function (realtime, msg, callback, timeSent) {
         if (err) {
             debug(realtime, "Posting to server failed [" + err + "]");
             realtime.pending = null;
+            realtime.syncSchedule = schedule(realtime, function () { sync(realtime); });
         } else {
             var pending = realtime.pending;
             realtime.pending = null;
