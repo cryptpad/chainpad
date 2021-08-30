@@ -2,6 +2,10 @@
   "name": "chainpad",
   "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
   "version": "5.2.4",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xwiki-contrib/chainpad"
+  },
   "dependencies": {
     "fast-diff": "^1.1.2",
     "gluejs": "~2.4.0",
