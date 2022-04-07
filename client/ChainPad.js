@@ -276,6 +276,7 @@ var create = function (config) {
 
         patchHandlers: [],
         changeHandlers: [],
+        errorHandlers: [],
 
         messageHandlers: [],
 
@@ -888,6 +889,7 @@ export type ChainPad_Config_t = {
 */
 module.exports.create = function (conf /*:ChainPad_Config_t*/) {
     var realtime = create(mkConfig(conf));
+    var MAX_SIZE = 10000000; // XXX
     var out = {
         onPatch: function (handler /*:(Patch_t)=>void*/) {
             Common.assert(typeof(handler) === 'function');
@@ -913,7 +915,18 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
             doOperation(realtime, Operation.create(offset, count, chars));
         },
 
+        onError: function (handler /*:(number, number, string)=>void*/) {
+            Common.assert(typeof(handler) === 'function');
+            realtime.errorHandlers.push(handler);
+        },
+
         contentUpdate: function (newContent /*:string*/) {
+            if (realtime.authDoc.length > MAX_SIZE) {
+                realtime.errorHandlers.forEach(function (handler) {
+                    handler('E_MAX_SIZE_EXCEEDED', realtime.authDoc.length);
+                });
+                return true;
+            }
             var ops = realtime.config.diffFunction(realtime.authDoc, newContent);
             var uncommitted = Patch.create(realtime.uncommitted.parentHash);
             Array.prototype.push.apply(uncommitted.operations, ops);
@@ -927,9 +940,20 @@ module.exports.create = function (conf /*:ChainPad_Config_t*/) {
 
         message: function (message /*:string*/) {
             handleMessage(realtime, message, false);
+            if (realtime.authDoc.length > MAX_SIZE) {
+                realtime.errorHandlers.forEach(function (handler) {
+                    handler('E_MAX_SIZE_EXCEEDED', realtime.authDoc.length);
+                });
+            }
         },
 
         start: function () {
+            if (realtime.authDoc.length > MAX_SIZE) {
+                realtime.errorHandlers.forEach(function (handler) {
+                    handler('E_MAX_SIZE_EXCEEDED', realtime.authDoc.length);
+                });
+                return true;
+            }
             realtime.aborted = false;
             if (realtime.syncSchedule) { unschedule(realtime, realtime.syncSchedule); }
             realtime.pending = null;
