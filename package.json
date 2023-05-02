@@ -15,7 +15,11 @@
   },
   "devDependencies": {
     "flow-bin": "^0.42.0",
-    "jshint": "~2.9.1"
+    "jshint": "~2.13.4"
+  },
+  "overrides": {
+    "minimist": "~1.2.3",
+    "minimatch": "~3.0.5"
   },
   "scripts": {
     "lint": "jshint --config .jshintrc --exclude-path .jshintignore .",
