@@ -1,7 +1,8 @@
 {
   "name": "chainpad",
   "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
-  "version": "5.2.6",
+  "version": "5.2.7",
+  "main": "chainpad.dist.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/xwiki-contrib/chainpad"
@@ -19,7 +20,7 @@
   },
   "overrides": {
     "minimist": "~1.2.3",
-    "minimatch": "~3.0.5"
+    "minimatch": "~3.0.8"
   },
   "scripts": {
     "lint": "jshint --config .jshintrc --exclude-path .jshintignore .",
