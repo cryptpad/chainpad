@@ -2,6 +2,7 @@
   "name": "chainpad",
   "description": "Realtime Collaborative Editor Algorithm based on the Nakamoto BlockChain",
   "version": "5.2.7",
+  "license": "LGPL-2.1",
   "main": "chainpad.dist.js",
   "repository": {
     "type": "git",
