@@ -8,7 +8,7 @@ to run with a dumb broadcasting server but with minimal effort, the algorithm co
 full peer-to-peer. Because the ChainPad server need not be aware of the content which is being
 edited, different types of editors can exist in harmony on the same system.
 
-License: GNU AGPLv3.0 or at your option, any later version.
+This library is currently licensed as LGPL-2.1. Previous versions of this library (v5.2.7 and below) were licensed as AGPL-3.0.
 
 ## Getting Started
 
