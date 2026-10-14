@@ -19,16 +19,18 @@
  */
 "use strict";
 
-var Sortify = require('json.sortify');
 var Diff = require('../Diff');
 //var Patch = require('../Patch');
 var Operation = require('../Operation');
+var Common = require('../Common');
 var TextTransformer = require('./TextTransformer');
 //var Sha = require('../sha256');
 
 /*::
 import type { Operation_t } from '../Operation';
 */
+
+var Sortify = Common.sortify;
 
 var isArray = function (obj) {
     return Object.prototype.toString.call(obj)==='[object Array]';

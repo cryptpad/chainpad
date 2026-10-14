@@ -1,8 +1,0 @@
-node_modules/
-/chainpad.dist.js
-/chainpad.js
-/alltests.js
-/randhtml.js
-/otaml.js
-/client/SHA256.js
-/client/sha256/

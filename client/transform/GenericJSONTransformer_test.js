@@ -23,8 +23,10 @@ var SmartJSONTransformer = require("./SmartJSONTransformer");
 var NaiveJSONTransformer = require("./NaiveJSONTransformer");
 //var TextTransformer = require('./TextTransformer');
 var Diff = require('../Diff');
-var Sortify = require("json.sortify");
+var Common = require('../Common');
 var Operation = require('../Operation');
+
+var Sortify = Common.sortify;
 
 var assertions = 0;
 var failed = false;

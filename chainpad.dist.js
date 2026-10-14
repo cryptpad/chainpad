@@ -1,8 +1,7 @@
 (function(){
 var r=function(){var e="function"==typeof require&&require,r=function(i,o,u){o||(o=0);var n=r.resolve(i,o),t=r.m[o][n];if(!t&&e){if(t=e(n))return t}else if(t&&t.c&&(o=t.c,n=t.m,t=r.m[o][t.m],!t))throw new Error('failed to require "'+n+'" from '+o);if(!t)throw new Error('failed to require "'+i+'" from '+u);return t.exports||(t.exports={},t.call(t.exports,t,t.exports,r.relative(n,o))),t.exports};return r.resolve=function(e,n){var i=e,t=e+".js",o=e+"/index.js";return r.m[n][t]&&t?t:r.m[n][o]&&o?o:i},r.relative=function(e,t){return function(n){if("."!=n.charAt(0))return r(n,t,e);var o=e.split("/"),f=n.split("/");o.pop();for(var i=0;i<f.length;i++){var u=f[i];".."==u?o.pop():"."!=u&&o.push(u)}return r(o.join("/"),t,e)}},r}();r.m = [];
 r.m[0] = {
-"json.sortify": {"c":1,"m":"dist/JSON.sortify.js"},
-"fast-diff": {"c":2,"m":"diff.js"},
+"fast-diff": {"c":1,"m":"diff.js"},
 "Diff.js": function(module, exports, require){
 /*@flow*/
 /*
@@ -577,6 +576,34 @@ module.exports.strcmp = function (a /*:string*/, b /*:string*/) {
     if (PARANOIA && typeof(a) !== 'string') { throw new Error(); }
     if (PARANOIA && typeof(b) !== 'string') { throw new Error(); }
     return ( (a === b) ? 0 : ( (a > b) ? 1 : -1 ) );
+};
+
+const isNumericalExpr = /^(0|[1-9]\d*)$/;
+const sortKeys = obj => {
+    if (Array.isArray(obj)) {
+        return obj.map(sortKeys);
+    }
+    if (obj instanceof Object) {
+        let numeric = [];
+        let nonNumeric = [];
+        Object.keys(obj).forEach(key => {
+            if (isNumericalExpr.test(key)) {
+                numeric.push(+key);
+            } else {
+                nonNumeric.push(key);
+            }
+        });
+        return numeric.sort((a, b) => a - b).concat(nonNumeric.sort()).reduce((result, key) => {
+            result[key] = sortKeys(obj[key]);
+            return result;
+        }, {});
+    }
+    return obj;
+};
+// Should have the same behaviour as
+// https://www.npmjs.com/package/json.sortify when called with one argument
+module.exports.sortify = (obj) => {
+    return JSON.stringify(sortKeys(obj));
 };
 
 Object.freeze(module.exports);
@@ -3498,16 +3525,18 @@ module.exports = function (
  */
 "use strict";
 
-var Sortify = require('json.sortify');
 var Diff = require('../Diff');
 //var Patch = require('../Patch');
 var Operation = require('../Operation');
+var Common = require('../Common');
 var TextTransformer = require('./TextTransformer');
 //var Sha = require('../sha256');
 
 /*::
 import type { Operation_t } from '../Operation';
 */
+
+var Sortify = Common.sortify;
 
 var isArray = function (obj) {
     return Object.prototype.toString.call(obj)==='[object Array]';
@@ -4055,25 +4084,6 @@ module.exports._ = {
 }
 };
 r.m[1] = {
-"dist/JSON.sortify.js": function(module, exports, require){
-"use strict";(function(factory){if(typeof module!=="undefined"&&module.exports)module.exports=factory();else if(typeof define=="function"&&typeof define.amd=="object")define("json.sortify",factory);else JSON.sortify=factory()})(function(){ /*!
-*    Copyright 2015-2017 Thomas Rosenau
-*
-*    Licensed under the Apache License, Version 2.0 (the "License");
-*    you may not use this file except in compliance with the License.
-*    You may obtain a copy of the License at
-*
-*        http://www.apache.org/licenses/LICENSE-2.0
-*
-*    Unless required by applicable law or agreed to in writing, software
-*    distributed under the License is distributed on an "AS IS" BASIS,
-*    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-*    See the License for the specific language governing permissions and
-*    limitations under the License.
-*/"use strict";var sortKeys=function sortKeys(o){if(Array.isArray(o)){return o.map(sortKeys)}else if(o instanceof Object){var _ret=function(){var numeric=[];var nonNumeric=[];Object.keys(o).forEach(function(key){if(/^(0|[1-9][0-9]*)$/.test(key)){numeric.push(+key)}else {nonNumeric.push(key)}});return {v:numeric.sort(function(a,b){return a-b}).concat(nonNumeric.sort()).reduce(function(result,key){result[key]=sortKeys(o[key]);return result},{})}}();if(typeof _ret==="object")return _ret.v}return o};var jsonStringify=JSON.stringify.bind(JSON);var sortify=function sortify(value,replacer,space){var nativeJson=jsonStringify(value,replacer,0);if(!nativeJson||nativeJson[0]!=="{"&&nativeJson[0]!=="["){return nativeJson}var cleanObj=JSON.parse(nativeJson);return jsonStringify(sortKeys(cleanObj),null,space)};return sortify});
-}
-};
-r.m[2] = {
 "diff.js": function(module, exports, require){
 /**
  * This library modifies the diff-patch-match library by Neil Fraser

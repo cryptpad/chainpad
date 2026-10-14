@@ -11,20 +11,18 @@
   "dependencies": {
     "fast-diff": "^1.1.2",
     "gluejs": "~2.4.0",
-    "json.sortify": "^2.2.2",
     "nthen": "^0.1.5"
   },
   "devDependencies": {
-    "flow-bin": "^0.42.0",
-    "jshint": "~2.13.4"
+    "eslint": "^10.0.2",
+    "globals": "^16.3.0"
   },
   "overrides": {
     "minimist": "~1.2.3",
     "minimatch": "~10.2.2"
   },
   "scripts": {
-    "lint": "jshint --config .jshintrc --exclude-path .jshintignore .",
-    "flow": "./node_modules/.bin/flow",
+    "lint": "eslint .",
     "test": "node ./test.js"
   }
 }
